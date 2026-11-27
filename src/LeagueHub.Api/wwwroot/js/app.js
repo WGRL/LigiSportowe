@@ -382,8 +382,19 @@ $("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   const data = new FormData(form);
+  const username = String(data.get("username") ?? "").trim();
+  const password = String(data.get("password") ?? "");
+  $("#login-message").classList.remove("success");
+  if (!username) {
+    $("#login-message").textContent = "Podaj nazwę użytkownika.";
+    return;
+  }
+  if (!password) {
+    $("#login-message").textContent = "Podaj hasło.";
+    return;
+  }
   try {
-    await api("/api/auth/login", "POST", { username: data.get("username"), password: data.get("password") });
+    await api("/api/auth/login", "POST", { username, password });
     form.reset();
     $("#auth-dialog").close();
     await refreshSession();
@@ -396,12 +407,47 @@ $("#register-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   const data = new FormData(form);
-  if (data.get("password") !== data.get("passwordRepeat")) {
-    $("#register-message").textContent = "Hasła nie są takie same.";
+  const username = String(data.get("username") ?? "").trim();
+  const password = String(data.get("password") ?? "");
+  const passwordRepeat = String(data.get("passwordRepeat") ?? "");
+  const message = $("#register-message");
+  message.classList.remove("success");
+  message.textContent = "";
+
+  if (!username) {
+    message.textContent = "Podaj nazwę użytkownika.";
+    return;
+  }
+  if (username.length < 3) {
+    message.textContent = "Nazwa użytkownika musi mieć co najmniej 3 znaki.";
+    return;
+  }
+  if (username.length > 32) {
+    message.textContent = "Nazwa użytkownika może mieć maksymalnie 32 znaki.";
+    return;
+  }
+  if (!/^[A-Za-z0-9_.-]+$/.test(username)) {
+    message.textContent = "Nazwa użytkownika może zawierać tylko litery, cyfry, kropkę, podkreślenie i myślnik.";
+    return;
+  }
+  if (password.length < 8) {
+    message.textContent = "Hasło musi mieć co najmniej 8 znaków.";
+    return;
+  }
+  if (new TextEncoder().encode(password).length > 72) {
+    message.textContent = "Hasło może mieć maksymalnie 72 bajty.";
+    return;
+  }
+  if (!/[A-Z]/.test(password) || !/\d/.test(password)) {
+    message.textContent = "Hasło musi zawierać co najmniej 1 wielką literę i 1 cyfrę.";
+    return;
+  }
+  if (password !== passwordRepeat) {
+    message.textContent = "Hasła nie są takie same.";
     return;
   }
   try {
-    await api("/api/auth/register", "POST", { username: data.get("username"), password: data.get("password") });
+    await api("/api/auth/register", "POST", { username, password });
     form.reset();
     setAuthView("login");
     $("#login-form").elements.username.value = data.get("username");

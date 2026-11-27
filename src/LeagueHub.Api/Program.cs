@@ -85,6 +85,8 @@ api.MapGet("/auth/me", (ClaimsPrincipal u) => u.Identity?.IsAuthenticated == tru
 auth.MapPost("/register", async (Credentials c) =>
 {
     var name = c.Username?.Trim() ?? "";
+    if (name.Length < 3)
+        return Bad("Nazwa użytkownika musi mieć co najmniej 3 znaki.");
     if (!Regex.IsMatch(name, "^[A-Za-z0-9_.-]{3,32}$"))
         return Bad("Nazwa użytkownika: 3–32 znaki (litery, cyfry, . _ -).");
     if (!IsStrongPassword(c.Password))
