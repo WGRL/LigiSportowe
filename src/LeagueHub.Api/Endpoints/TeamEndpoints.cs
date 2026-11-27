@@ -18,7 +18,7 @@ public static class TeamEndpoints
             DbExecutor.Params(request, principal, id)));
 
         user.MapGet("/teams/{id:long}/players", (long id, DbExecutor db) => db.Query("""
-            SELECT u.id, u.username, m.is_captain AS isCaptain
+            SELECT u.id, u.username, u.display_name AS displayName, m.is_captain AS isCaptain
             FROM team_members m JOIN users u ON u.id = m.user_id
             WHERE m.team_id = @id ORDER BY m.is_captain DESC, u.username
             """, new { id }));

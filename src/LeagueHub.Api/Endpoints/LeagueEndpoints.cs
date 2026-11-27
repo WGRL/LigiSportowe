@@ -15,7 +15,7 @@ public static class LeagueEndpoints
             """, new { uid = principal.Uid() }));
 
         api.MapGet("/leagues", (DbExecutor db) => db.Query("""
-            SELECT l.id, l.name, l.sport, l.description, l.organizer_id AS organizerId, u.username AS organizer
+            SELECT l.id, l.name, l.sport, l.description, l.organizer_id AS organizerId, u.display_name AS organizer
             FROM leagues l JOIN users u ON u.id = l.organizer_id ORDER BY l.name
             """));
 
@@ -30,7 +30,7 @@ public static class LeagueEndpoints
             """, DbExecutor.Params(request, principal, id)));
 
         api.MapGet("/leagues/{id:long}/teams", (long id, DbExecutor db) => db.Query("""
-            SELECT t.id, t.name, c.user_id AS captainId, u.username AS captain,
+            SELECT t.id, t.name, c.user_id AS captainId, u.display_name AS captain,
                    (SELECT COUNT(*) FROM team_members m WHERE m.team_id = t.id) AS players
             FROM teams t
             LEFT JOIN team_members c ON c.team_id = t.id AND c.is_captain

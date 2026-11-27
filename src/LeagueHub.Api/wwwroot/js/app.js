@@ -8,8 +8,19 @@ const NEXT_STATUS = { preparation: "Rozpocznij sezon", ongoing: "Zakończ sezon"
 
 const state = {
   user: null, myTeams: [], leagues: [], league: null, seasons: [], season: null,
-  teams: [], games: [], standings: [], openTeam: null, players: []
+  teams: [], games: [], standings: [], openTeam: null, players: [],
+  templates: { formats: [], strategies: [], scheduleSystems: [] }, openGame: null, lineup: []
 };
+
+// Domyślny format kadry zgadywany z dyscypliny ligi (organizator może go zmienić).
+const SPORT_FORMATS = [
+  [/3\s*[x×]\s*3/i, "basketball3x3"], [/kosz|basket/i, "basketball"], [/siatk|volley/i, "volleyball"],
+  [/futsal|hal/i, "futsal"], [/orlik|szóst|siódem|7/i, "football7"], [/ręczn|handball/i, "handball"],
+  [/hokej|hockey/i, "hockey"]
+];
+const defaultFormat = () => SPORT_FORMATS.find(([re]) => re.test(state.league?.sport ?? ""))?.[1] ?? "football11";
+const formatOf = (id) => state.templates.formats.find((f) => f.id === id);
+const strategyOf = (id) => state.templates.strategies.find((s) => s.id === id);
 
 // ---------- API ----------
 async function api(url, method = "GET", body) {
@@ -34,6 +45,7 @@ const game = (id) => state.games.find((g) => g.id === id);
 
 // ---------- Ładowanie danych ----------
 async function refreshSession() {
+  if (!state.templates.formats.length) state.templates = await api("/api/lineup-templates");
   const me = await api("/api/auth/me");
   state.user = me.authenticated ? me : null;
   state.myTeams = state.user ? await api("/api/me/teams") : [];
@@ -47,7 +59,7 @@ async function loadLeagues(selectId) {
 }
 
 async function selectLeague(id, seasonId) {
-  if (state.league?.id !== id) state.openTeam = null;
+  if (state.league?.id !== id) state.openTeam = state.openGame = null;
   state.league = state.leagues.find((l) => l.id === id);
   [state.seasons, state.teams] = await Promise.all([
     api(`/api/leagues/${id}/seasons`), api(`/api/leagues/${id}/teams`)
@@ -56,6 +68,7 @@ async function selectLeague(id, seasonId) {
 }
 
 async function selectSeason(id) {
+  if (state.season?.id !== id) state.openGame = null;
   const s = state.season = state.seasons.find((x) => x.id === id) ?? state.seasons[0] ?? null;
   [state.games, state.standings] = s
     ? await Promise.all([api(`/api/seasons/${s.id}/games`), api(`/api/seasons/${s.id}/standings`)])
@@ -64,7 +77,11 @@ async function selectSeason(id) {
 }
 
 async function loadPlayers() {
-  state.players = state.openTeam && state.user ? await api(`/api/teams/${state.openTeam}/players`) : [];
+  if (state.openGame && !game(state.openGame)) state.openGame = null;
+  [state.players, state.lineup] = await Promise.all([
+    state.openTeam && state.user ? api(`/api/teams/${state.openTeam}/players`) : [],
+    state.openGame && state.user ? api(`/api/games/${state.openGame}/lineup`) : []
+  ]);
   render();
 }
 
@@ -96,6 +113,7 @@ function render() {
   $("[data-action=edit-league]").hidden = !isOrganizer();
   $("[data-action=new-team]").hidden = !isOrganizer();
   $("[data-action=new-game]").hidden = !(isOrganizer() && season && season.status !== "finished" && state.teams.length > 1);
+  $("[data-action=generate-schedule]").hidden = !(isOrganizer() && season && season.status !== "finished");
   renderLeagues();
   renderLeague();
   renderStandings();
@@ -157,10 +175,12 @@ function renderGames() {
   const status = state.season?.status;
   const canEdit = isOrganizer() && status !== "finished";
   const canScore = isOrganizer() && status === "ongoing";
-  const item = (g, actions) => `<div class="list-item">
+  const lineupBtn = (g) => state.user ? btn("toggle-game", g.id, g.id === state.openGame ? "Ukryj kadrę" : "Kadra") : "";
+  const item = (g, actions) => `<div class="team"><div class="list-item">
       <span><strong>${esc(g.homeTeam)} — ${esc(g.awayTeam)}</strong>
-        <small>${formatDate(g.startsAt)}${g.venue ? ` · ${esc(g.venue)}` : ""}</small></span>
-      <span class="toolbar">${actions}</span></div>`;
+        <small>${g.round ? `Kolejka ${g.round} · ` : ""}${formatDate(g.startsAt)}${g.venue ? ` · ${esc(g.venue)}` : ""}</small></span>
+      <span class="toolbar">${actions}${lineupBtn(g)}</span></div>
+      ${g.id === state.openGame ? renderLineup(g) : ""}</div>`;
   const upcoming = state.games.filter((g) => g.homeScore === null);
   const played = state.games.filter((g) => g.homeScore !== null).reverse();
 
@@ -168,13 +188,40 @@ function renderGames() {
     ? `<div class="list">${upcoming.map((g) => item(g,
         (canScore ? btn("set-result", g.id, "Wynik", true) : "") +
         (canEdit ? btn("edit-game", g.id, "Edytuj") + btn("delete-game", g.id, "Usuń") : ""))).join("")}</div>`
-    : empty("◷", "Brak zaplanowanych spotkań.");
+    : empty("◷", isOrganizer() && state.teams.length > 1 && status !== "finished"
+        ? "Brak zaplanowanych spotkań. Użyj „Ułóż terminarz”, aby wygenerować mecze każdy z każdym."
+        : "Brak zaplanowanych spotkań.");
 
   $("#result-list").innerHTML = played.length
     ? `<div class="list">${played.map((g) => item(g,
         `<strong class="score">${g.homeScore}:${g.awayScore}</strong>` +
         (canScore ? btn("set-result", g.id, "Popraw") : ""))).join("")}</div>`
     : empty("✓", status === "preparation" ? "Wyniki można wpisywać po rozpoczęciu sezonu." : "Brak rozegranych spotkań.");
+}
+
+function renderLineup(g) {
+  const format = formatOf(g.lineupFormat), strategy = strategyOf(g.lineupStrategy);
+  const canDraw = g.homeScore === null && state.season?.status !== "finished";
+  const person = (p) => `<li><span title="Nazwa użytkownika: ${esc(p.username)}">${esc(p.displayName || p.username)}${p.isCaptain ? ' <span class="status-pill">Kapitan</span>' : ""}</span></li>`;
+  const side = (teamId, name) => {
+    const rows = state.lineup.filter((p) => p.teamId === teamId);
+    const starters = rows.filter((p) => p.role === "starter"), subs = rows.filter((p) => p.role === "substitute");
+    const short = format && starters.length < format.starters;
+    return `<div class="lineup-side">
+      <div class="lineup-head"><strong>${esc(name)}</strong>
+        ${canDraw && canManageTeam(teamId) ? btn("draw-lineup", g.id, "Losuj ponownie", false, teamId) : ""}</div>
+      <p class="lineup-label">Pierwszy skład ${format ? `(${starters.length}/${format.starters})` : ""}
+        ${short ? '<span class="status-pill status-preparation">Niepełny skład</span>' : ""}</p>
+      <ul class="roster">${starters.map(person).join("") || '<li class="muted">Brak zawodników — dodaj ich do drużyny i wylosuj kadrę ponownie.</li>'}</ul>
+      ${subs.length ? `<p class="lineup-label">Rezerwowi (${subs.length}/${format?.substitutes ?? "?"})</p>
+        <ul class="roster">${subs.map(person).join("")}</ul>` : ""}
+    </div>`;
+  };
+  return `<div class="lineup">
+    <p class="muted lineup-meta">${esc(format?.name ?? g.lineupFormat)} · dobór: <span title="${esc(strategy?.description)}">${esc(strategy?.name ?? g.lineupStrategy)}</span>
+      ${canDraw && isOrganizer() ? btn("draw-lineup", g.id, "Losuj obie kadry") : ""}</p>
+    <div class="lineup-grid">${side(g.homeTeamId, g.homeTeam)}${side(g.awayTeamId, g.awayTeam)}</div>
+  </div>`;
 }
 
 function renderTeams() {
@@ -219,11 +266,17 @@ function openForm(title, fields, submit) {
     const label = document.createElement("label");
     const input = document.createElement(f.options ? "select" : "input");
     label.append(f.label, input);
+    if (f.hint) label.append(Object.assign(document.createElement("small"), { className: "hint", textContent: f.hint }));
     input.name = f.name;
     if (f.options) input.append(...f.options.map(([value, text]) => new Option(text, value)));
     else input.type = f.type ?? "text";
+    if (f.text) input.dataset.text = "1";
     for (const key of ["required", "min", "max", "maxLength", "readOnly"]) if (f[key] !== undefined) input[key] = f[key];
-    input.value = f.value ?? "";
+    if (input.type === "checkbox") {
+      input.checked = !!f.value;
+      label.classList.add("checkbox");
+      label.prepend(input);
+    } else input.value = f.value ?? "";
     return label;
   }));
   formSubmit = async (data) => { await submit(data); await reload(); };
@@ -235,7 +288,8 @@ $("#edit-form").addEventListener("submit", async (event) => {
   const data = {};
   for (const el of event.currentTarget.elements) {
     if (!el.name || el.readOnly) continue;
-    const numeric = el.type === "number" || el.tagName === "SELECT";
+    if (el.type === "checkbox") { data[el.name] = el.checked; continue; }
+    const numeric = el.type === "number" || (el.tagName === "SELECT" && !el.dataset.text);
     data[el.name] = el.value === "" ? null : numeric ? Number(el.value) : el.value;
   }
   try {
@@ -261,13 +315,64 @@ const seasonForm = (title, s, save) => openForm(title, [
   { name: "pointsLoss", label: "Punkty za porażkę", type: "number", min: 0, max: 10, required: true, value: s.pointsLoss }
 ], save);
 
+const lineupFields = (g) => [
+  { name: "lineupFormat", label: "Format kadry meczowej", text: true, value: g.lineupFormat ?? defaultFormat(),
+    options: state.templates.formats.map((f) => [f.id, `${f.name} — ${f.starters} + ${f.substitutes} rez.`]) },
+  { name: "lineupStrategy", label: "Dobór zawodników", text: true, value: g.lineupStrategy ?? "rotation",
+    options: state.templates.strategies.map((s) => [s.id, s.name]),
+    hint: state.templates.strategies.map((s) => `${s.name}: ${s.description}`).join(" ") +
+      " Kapitan zawsze wychodzi w pierwszym składzie." + (g.id ? " Zmiana drużyn, formatu lub doboru losuje kadry od nowa." : "") }
+];
+
+// Najbliższa sobota 10:00 (a jeśli są już mecze — pierwsza sobota po ostatnim), typowy termin kolejki w lidze amatorskiej.
+function nextSaturday() {
+  const last = state.games.reduce((max, g) => Math.max(max, new Date(g.startsAt).getTime()), Date.now());
+  const d = new Date(last);
+  d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7 || 7));
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T10:00`;
+}
+
+function scheduleForm() {
+  const n = state.teams.length, rounds = n % 2 ? n : n - 1, perRound = Math.floor(n / 2);
+  if (n < 2) throw new Error("Do ułożenia terminarza potrzebne są co najmniej 2 drużyny — dodaj je w panelu „Drużyny”.");
+  const played = state.games.filter((g) => g.homeScore !== null).length, planned = state.games.length - played;
+  openForm("Ułóż terminarz", [
+    { name: "system", label: "System rozgrywek", text: true, value: "double",
+      options: state.templates.scheduleSystems.map((s) => [s.id, s.name]),
+      hint: `${n} drużyn → ${rounds} kolejek w rundzie po ${perRound} mecz(e)${n % 2 ? ", w każdej kolejce jedna drużyna pauzuje" : ""}. ` +
+        "Kolejność drużyn jest losowana, gospodarze rozkładają się po równo. " +
+        state.templates.scheduleSystems.map((s) => `${s.name}: ${s.description}`).join(" ") },
+    { name: "firstGameAt", label: "Pierwszy mecz", type: "datetime-local", required: true, value: nextSaturday() },
+    { name: "roundIntervalDays", label: "Dni między kolejkami", type: "number", min: 0, max: 60, required: true, value: 7,
+      hint: "7 = kolejka co tydzień, 14 = co dwa tygodnie, 0 = turniej jednego dnia (kolejki jedna po drugiej)." },
+    { name: "gameIntervalMinutes", label: "Minuty między meczami w kolejce", type: "number", min: 0, max: 1440, required: true, value: 90,
+      hint: "Mecze kolejki jeden po drugim na jednym boisku; 0 = wszystkie o tej samej godzinie (kilka boisk)." },
+    { name: "venue", label: "Miejsce (opcjonalnie)", maxLength: 120 },
+    ...lineupFields({}),
+    ...(state.games.length ? [{
+      name: "existing", label: `Istniejące mecze: ${played} rozegranych, ${planned} zaplanowanych`, text: true, value: "keep",
+      options: [
+        ["keep", "Zostaw je i dopisz brakujące pary"],
+        ["replace", "Usuń zaplanowane i ułóż je od nowa"]
+      ],
+      hint: "Rozegrane mecze zawsze zostają i liczą się jako odbyte pary. Nowe mecze dostają kolejne numery kolejek."
+    }] : [])
+  ], async (d) => {
+    const r = await api(`/api/seasons/${state.season.id}/schedule`, "POST", d);
+    notify(r.games ? `Dodano ${r.games} mecz(e/ów) w ${r.rounds} kolejkach.`
+      : "Terminarz jest kompletny — wszystkie pary mają już swoje mecze.", true);
+  });
+}
+
 function gameForm(title, g, save) {
   const teams = state.teams.map((t) => [t.id, t.name]);
   openForm(title, [
     { name: "homeTeamId", label: "Gospodarz", options: teams, value: g.homeTeamId ?? teams[0]?.[0] },
     { name: "awayTeamId", label: "Gość", options: teams, value: g.awayTeamId ?? teams[1]?.[0] },
     { name: "startsAt", label: "Termin", type: "datetime-local", required: true, value: g.startsAt?.slice(0, 16) },
-    { name: "venue", label: "Miejsce (opcjonalnie)", maxLength: 120, value: g.venue }
+    { name: "venue", label: "Miejsce (opcjonalnie)", maxLength: 120, value: g.venue },
+    ...lineupFields(g)
   ], save);
 }
 
@@ -332,7 +437,21 @@ const actions = {
     await api(`/api/teams/${id}/captain`, "PUT", { userId: user });
     await reload();
   },
-  "new-game": () => gameForm("Nowy mecz", {}, (d) => api(`/api/seasons/${state.season.id}/games`, "POST", d)),
+  "new-game": () => gameForm("Nowy mecz", {}, async (d) => {
+    const { id } = await api(`/api/seasons/${state.season.id}/games`, "POST", d);
+    state.openGame = id;
+  }),
+  "generate-schedule": () => scheduleForm(),
+  "toggle-game": ({ id }) => {
+    state.openGame = state.openGame === id ? null : id;
+    return loadPlayers();
+  },
+  "draw-lineup": async ({ id, user: teamId }) => {
+    const both = !teamId;
+    if (!confirm(both ? "Wylosować od nowa kadry obu drużyn?" : `Wylosować od nowa kadrę: ${team(teamId)?.name}?`)) return;
+    await api(`/api/games/${id}/lineup/draw`, "POST", { teamId: both ? null : teamId });
+    await loadPlayers();
+  },
   "edit-game": ({ id }) => gameForm("Edytuj mecz", game(id), (d) => api(`/api/games/${id}`, "PUT", d)),
   "delete-game": async ({ id }) => {
     if (!confirm("Usunąć mecz z terminarza?")) return;
@@ -348,15 +467,20 @@ const actions = {
   }
 };
 
+function notify(message, success = false) {
+  const notice = $("#notice");
+  notice.textContent = message;
+  notice.classList.toggle("notice-success", success);
+  notice.hidden = false;
+  clearTimeout(notify.timer);
+  notify.timer = setTimeout(() => (notice.hidden = true), 6000);
+}
+
 async function run(fn) {
   try {
     await fn();
   } catch (error) {
-    const notice = $("#notice");
-    notice.textContent = error.message;
-    notice.hidden = false;
-    clearTimeout(run.timer);
-    run.timer = setTimeout(() => (notice.hidden = true), 5000);
+    notify(error.message);
   }
 }
 

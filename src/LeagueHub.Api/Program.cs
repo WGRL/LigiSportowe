@@ -61,7 +61,7 @@ var api = app.MapGroup("/api");
 var user = api.MapGroup("").RequireAuthorization().AddEndpointFilter<ValidationFilter>();
 var auth = api.MapGroup("/auth").RequireRateLimiting("auth");
 
-AuthEndpoints.Map(api, auth);
+AuthEndpoints.Map(api, auth, user);
 LeagueEndpoints.Map(api, user);
 SeasonEndpoints.Map(api, user);
 TeamEndpoints.Map(user);

@@ -7,7 +7,8 @@
 --  * mecz należy do sezonu, a obie drużyny muszą należeć do ligi tego sezonu (złożone FK),
 --  * zawodnik gra w co najwyżej jednej drużynie danej ligi,
 --  * drużyna ma co najwyżej jednego kapitana i musi on być jej zawodnikiem,
---  * mecz jest rozegrany wtedy i tylko wtedy, gdy ma oba wyniki.
+--  * mecz jest rozegrany wtedy i tylko wtedy, gdy ma oba wyniki,
+--  * zawodnik występuje w kadrze meczu co najwyżej raz.
 --
 -- Uruchom raz jako administrator: mysql -u root -p < database/schema.sql
 
@@ -84,10 +85,28 @@ CREATE TABLE games (
     venue        VARCHAR(120)      NULL,
     home_score   SMALLINT UNSIGNED NULL,                       -- NULL = mecz nierozegrany
     away_score   SMALLINT UNSIGNED NULL,
+    round_no     SMALLINT UNSIGNED NULL,                       -- numer kolejki (terminarz generowany); NULL = mecz dodany ręcznie
+    lineup_format   VARCHAR(20)    NOT NULL DEFAULT 'football11', -- szablon kadry (Lineups/LineupTemplates.cs)
+    lineup_strategy VARCHAR(20)    NOT NULL DEFAULT 'rotation',   -- sposób doboru zawodników
     KEY ix_games_season_starts (season_id, starts_at),
     CONSTRAINT chk_games_teams CHECK (home_team_id <> away_team_id),
     CONSTRAINT chk_games_score CHECK ((home_score IS NULL) = (away_score IS NULL)),
     CONSTRAINT fk_games_season FOREIGN KEY (season_id, league_id) REFERENCES seasons (id, league_id) ON DELETE CASCADE,
     CONSTRAINT fk_games_home   FOREIGN KEY (home_team_id, league_id) REFERENCES teams (id, league_id),
     CONSTRAINT fk_games_away   FOREIGN KEY (away_team_id, league_id) REFERENCES teams (id, league_id)
+) ENGINE=InnoDB;
+
+-- Kadra meczowa: dobierana automatycznie przy tworzeniu meczu, można ją wylosować ponownie przed rozegraniem.
+-- Zostaje w historii nawet, gdy zawodnik później odejdzie z drużyny.
+CREATE TABLE game_lineups (
+    game_id BIGINT           NOT NULL,
+    team_id BIGINT           NOT NULL,
+    user_id BIGINT           NOT NULL,
+    role    ENUM ('starter', 'substitute') NOT NULL,
+    slot    TINYINT UNSIGNED NOT NULL,                         -- kolejność w kadrze (1 = kapitan, jeśli jest)
+    PRIMARY KEY (game_id, user_id),
+    KEY ix_lineups_team_user (team_id, user_id),
+    CONSTRAINT fk_lineups_game FOREIGN KEY (game_id) REFERENCES games (id) ON DELETE CASCADE,
+    CONSTRAINT fk_lineups_team FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE CASCADE,
+    CONSTRAINT fk_lineups_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB;

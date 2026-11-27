@@ -23,12 +23,15 @@ Prosta aplikacja do prowadzenia amatorskich lig sportowych: ligi, sezony, druży
    (zmiana: `APP_URL`; pozostałe zmienne: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_NAME`).
 
 > Schemat zmienił się względem szkieletu. Jeśli masz starą bazę: `DROP DATABASE leaguehub;` i uruchom z `--init-db`.
+> Aby zachować dane, zaktualizuj istniejącą bazę: `DB_PASSWORD='to_samo_hasło' ./run.sh --migrate`.
+> Migracje można uruchamiać wielokrotnie, a dotychczasowi użytkownicy dostają nazwę wyświetlaną równą nazwie użytkownika.
 
 ## Model danych (`database/schema.sql`)
 
 ```text
 users ──< leagues (organizator) ──< seasons ──< games >── teams (gospodarz/gość)
                                 └─< teams ──< team_members >── users  (is_captain)
+games ──< game_lineups >── users   (kadra meczowa: pierwszy skład / rezerwowi)
 ```
 
 - **Liga** to trwały byt; **sezon** ma własne parametry (daty, punktacja Z/R/P) i stan: `preparation → ongoing → finished`.
@@ -36,13 +39,60 @@ users ──< leagues (organizator) ──< seasons ──< games >── teams 
 - Baza wymusza spójność: obie drużyny meczu należą do ligi sezonu (złożone FK), zawodnik gra w jednej drużynie na ligę,
   drużyna ma maks. jednego kapitana i jest on jej zawodnikiem, mecz jest rozegrany ⇔ ma oba wyniki.
 
+## Generator terminarza
+
+W panelu „Terminarz” organizator klika **Ułóż terminarz**. System układa mecze „każdy z każdym” z aktualnych drużyn ligi
+metodą Bergera, jak w ligach piłkarskich (`Scheduling/RoundRobin.cs`, `POST /api/seasons/{id}/schedule`).
+
+- **Systemy rozgrywek**: jedna runda, mecz i rewanż (runda jesienna i wiosenna), trzy rundy.
+  Rewanże idą w tej samej kolejności, ze zamianą gospodarza.
+- **Kolejność drużyn jest losowana**, tak jak przy losowaniu terminarza.
+  Gospodarze rozkładają się po równo: różnica wynosi najwyżej 1 mecz u siebie, a drużyna gra maks. 2 kolejki z rzędu w tym samym miejscu.
+  Przy nieparzystej liczbie drużyn w każdej kolejce jedna pauzuje.
+- **Terminy**: pierwszy mecz, odstęp między kolejkami w dniach (7 = co tydzień, 0 = turniej jednego dnia)
+  i odstęp między meczami w kolejce w minutach (0 = wszystkie mecze kolejki o tej samej godzinie).
+- Każdy mecz dostaje numer kolejki i od razu kadry meczowe (patrz niżej), dobierane chronologicznie, więc rotacja działa przez cały sezon.
+- Działa też w trakcie sezonu. Jeśli sezon ma już mecze, organizator wybiera jedną z dwóch opcji:
+  **zostaw i dopisz brakujące pary** (np. po dołączeniu nowej drużyny) albo **ułóż zaplanowane od nowa**.
+  Rozegrane mecze zawsze zostają i liczą się jako odbyte pary. Nowe mecze dostają kolejne numery kolejek.
+
+## Kadra meczowa (automatyczny dobór zawodników)
+
+Po dodaniu meczu każda drużyna od razu dostaje kadrę: pierwszy skład i rezerwowych, wybranych spośród jej zawodników.
+Organizator wybiera dla meczu dwie rzeczy (definicje: `Lineups/LineupTemplates.cs`, API: `GET /api/lineup-templates`).
+
+**Format kadry** to liczebność zgodna z typowymi przepisami. Domyślny format jest zgadywany z dyscypliny ligi.
+
+| Format | Skład | Rezerwa |
+|---|---|---|
+| Piłka nożna 11-osobowa | 11 | 7 |
+| Piłka nożna 7-osobowa (orlik) | 7 | 5 |
+| Futsal / piłka halowa | 5 | 9 |
+| Koszykówka 5×5 / 3×3 | 5 / 3 | 7 / 1 |
+| Siatkówka | 6 | 8 |
+| Piłka ręczna | 7 | 9 |
+| Hokej na lodzie | 6 | 14 |
+
+**Sposób doboru** decyduje o tym, kogo system wybierze:
+
+- **Rotacja** (domyślnie): w pierwszym składzie grają ci, którzy w sezonie najrzadziej w nim wychodzili. Każdy dostaje równe szanse gry.
+- **Podstawowy skład**: pierwszeństwo mają zawodnicy z największą liczbą występów w pierwszym składzie, jak „pierwsza jedenastka” trenera.
+- **Staż w drużynie**: pierwszeństwo mają zawodnicy, którzy są w drużynie najdłużej.
+- **Losowanie**: kadra losowana spośród całego składu.
+
+Kapitan zawsze wychodzi w pierwszym składzie. Remisy w kryterium rozstrzyga losowanie.
+Gdy zawodników jest za mało, kadra jest niepełna i interfejs to oznacza.
+Przed rozegraniem meczu kadrę można wylosować ponownie: organizator dla obu drużyn, kapitan dla swojej.
+Zmiana drużyn, formatu lub sposobu doboru w edycji meczu też losuje kadry od nowa.
+Po wpisaniu wyniku kadra zostaje w historii bez zmian.
+
 ## Role i uprawnienia
 
 | Rola | Może |
 |---|---|
 | Gość | przeglądać ligi, sezony, drużyny, terminarz, wyniki i tabelę |
 | Zawodnik | j.w. + widzieć składy i swoje drużyny |
-| Kapitan | j.w. + zmieniać nazwę drużyny, dodawać/usuwać zawodników |
+| Kapitan | j.w. + zmieniać nazwę drużyny, dodawać/usuwać zawodników, losować ponownie kadrę meczową swojej drużyny |
 | Organizator (twórca ligi) | wszystko w swojej lidze: edycja ligi, sezony i ich stan, drużyny, kapitanowie, terminarz, wyniki |
 
 Reguły sezonu: parametry edytowalne tylko w przygotowaniu; wyniki wpisywane/poprawiane tylko w trwającym sezonie;

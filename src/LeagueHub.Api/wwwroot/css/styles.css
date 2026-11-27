@@ -620,3 +620,64 @@ h2 {
   box-shadow: var(--shadow);
   transform: translateX(-50%);
 }
+
+/* ---------- Kadra meczowa ---------- */
+.lineup {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.lineup-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.lineup-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.lineup-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lineup-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.lineup .roster {
+  margin-left: 0;
+}
+
+.form label.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.form .checkbox input {
+  width: auto;
+  min-height: 0;
+}
+
+.notice.notice-success {
+  background: var(--accent);
+}

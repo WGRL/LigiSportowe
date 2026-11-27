@@ -72,7 +72,10 @@
       <section id="schedule" class="panel">
         <div class="panel-heading">
           <div><p class="section-kicker">Najbliższe</p><h2>Terminarz</h2></div>
-          <button class="icon-button" type="button" data-action="new-game" aria-label="Dodaj mecz" hidden>+</button>
+          <span class="toolbar">
+            <button class="button button-ghost button-small" type="button" data-action="generate-schedule" hidden>Ułóż terminarz</button>
+            <button class="icon-button" type="button" data-action="new-game" aria-label="Dodaj mecz" hidden>+</button>
+          </span>
         </div>
         <div id="schedule-list"></div>
       </section>
