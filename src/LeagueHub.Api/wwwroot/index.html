@@ -25,6 +25,7 @@
     <div class="auth-actions">
       <span id="user-label" class="user-label" hidden></span>
       <button id="login-button" class="button button-primary" type="button" data-action="login">Zaloguj się</button>
+      <button id="profile-button" class="button button-ghost" type="button" data-action="edit-profile" hidden>Edytuj nazwę</button>
       <button id="logout-button" class="button button-ghost" type="button" data-action="logout" hidden>Wyloguj</button>
     </div>
   </header>
@@ -107,7 +108,7 @@
       <section id="login-view">
         <p class="section-kicker">Konto</p>
         <h2>Zaloguj się</h2>
-        <form id="login-form" class="form">
+        <form id="login-form" class="form" novalidate>
           <label>Nazwa użytkownika
             <input name="username" autocomplete="username" minlength="3" maxlength="32" required>
           </label>
@@ -123,13 +124,17 @@
       <section id="register-view" hidden>
         <p class="section-kicker">Nowe konto</p>
         <h2>Rejestracja</h2>
-        <form id="register-form" class="form">
+        <form id="register-form" class="form" novalidate>
           <label>Nazwa użytkownika
-            <input name="username" autocomplete="username" pattern="[A-Za-z0-9_.\-]{3,32}" title="3–32 znaki: litery, cyfry, . _ -" required>
+            <input name="username" autocomplete="username" minlength="3" maxlength="32" required>
+            <small class="hint">3–32 znaki: litery, cyfry, . _ -.</small>
+          </label>
+          <label>Nazwa wyświetlana
+            <input name="displayName" autocomplete="name" maxlength="100" required>
+            <small class="hint">Może się powtarzać i będzie widoczna w drużynach.</small>
           </label>
           <label>Hasło
-            <input name="password" type="password" autocomplete="new-password" maxlength="72"
-                   pattern="(?=.*[A-Z])(?=.*\d).{8,72}" title="Co najmniej 8 znaków, w tym 1 wielka litera i 1 cyfra" required>
+            <input name="password" type="password" autocomplete="new-password" minlength="8" maxlength="72" required>
             <small class="hint">Min. 8 znaków, 1 wielka litera i 1 cyfra.</small>
           </label>
           <label>Powtórz hasło

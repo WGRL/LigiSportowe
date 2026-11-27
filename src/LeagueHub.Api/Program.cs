@@ -78,21 +78,41 @@ var user = api.MapGroup("").RequireAuthorization().AddEndpointFilter(async (ctx,
 var auth = api.MapGroup("/auth").RequireRateLimiting("auth");
 
 // ---------- Konta ----------
-api.MapGet("/auth/me", (ClaimsPrincipal u) => u.Identity?.IsAuthenticated == true
-    ? Results.Ok(new { authenticated = true, id = Uid(u), username = u.Identity.Name })
-    : Results.Ok(new { authenticated = false }));
+api.MapGet("/auth/me", async (ClaimsPrincipal u) =>
+{
+    if (u.Identity?.IsAuthenticated != true)
+        return Results.Ok(new { authenticated = false });
+    await using var db = Db();
+    var profile = await db.QueryFirstAsync<(string Username, string DisplayName)>(
+        "SELECT username, display_name AS DisplayName FROM users WHERE id = @id",
+        new { id = Uid(u) });
+    return Results.Ok(new { authenticated = true, id = Uid(u), username = profile.Username, displayName = profile.DisplayName });
+});
 
 auth.MapPost("/register", async (Credentials c) =>
 {
     var name = c.Username?.Trim() ?? "";
+    var displayName = c.DisplayName?.Trim() ?? name;
+    if (name.Length < 3)
+        return Bad("Nazwa użytkownika musi mieć co najmniej 3 znaki.");
     if (!Regex.IsMatch(name, "^[A-Za-z0-9_.-]{3,32}$"))
         return Bad("Nazwa użytkownika: 3–32 znaki (litery, cyfry, . _ -).");
+    if (!Check.Len(displayName, 1, 100))
+        return Bad("Nazwa wyświetlana: 1–100 znaków.");
     if (!IsStrongPassword(c.Password))
         return Bad("Hasło: co najmniej 8 znaków, w tym 1 wielka litera i 1 cyfra.");
     await using var db = Db();
-    await db.ExecuteAsync("INSERT INTO users (username, password_hash) VALUES (@name, @hash)",
-        new { name, hash = BCrypt.Net.BCrypt.HashPassword(c.Password, 12) });
+    await db.ExecuteAsync("INSERT INTO users (username, display_name, password_hash) VALUES (@name, @displayName, @hash)",
+        new { name, displayName, hash = BCrypt.Net.BCrypt.HashPassword(c.Password, 12) });
     return Results.Created();
+});
+
+user.MapPut("/auth/profile", async (DisplayNameReq r, ClaimsPrincipal u) =>
+{
+    if (r.Error() is { } error)
+        return Bad(error);
+    return await Exec("UPDATE users SET display_name = TRIM(@DisplayName) WHERE id = @uid",
+        P(r, u), "Nie udało się zaktualizować nazwy wyświetlanej.");
 });
 
 auth.MapPost("/login", async (Credentials c, HttpContext ctx) =>
@@ -122,7 +142,8 @@ user.MapGet("/me/teams", (ClaimsPrincipal u) => Query("""
 
 // ---------- Ligi ----------
 api.MapGet("/leagues", () => Query("""
-    SELECT l.id, l.name, l.sport, l.description, l.organizer_id AS organizerId, u.username AS organizer
+    SELECT l.id, l.name, l.sport, l.description, l.organizer_id AS organizerId,
+           u.display_name AS organizer
     FROM leagues l JOIN users u ON u.id = l.organizer_id ORDER BY l.name
     """));
 
@@ -186,7 +207,7 @@ api.MapGet("/seasons/{id:long}/standings", (long id) => Query("""
 
 // ---------- Drużyny i zawodnicy ----------
 api.MapGet("/leagues/{id:long}/teams", (long id) => Query("""
-    SELECT t.id, t.name, c.user_id AS captainId, u.username AS captain,
+    SELECT t.id, t.name, c.user_id AS captainId, u.display_name AS captain,
            (SELECT COUNT(*) FROM team_members m WHERE m.team_id = t.id) AS players
     FROM teams t
     LEFT JOIN team_members c ON c.team_id = t.id AND c.is_captain
@@ -202,7 +223,7 @@ user.MapPut("/teams/{id:long}", (long id, NameReq r, ClaimsPrincipal u) => Exec(
     $"UPDATE teams t {TeamAccess} SET t.name = TRIM(@Name) WHERE t.id = @id AND {CanManageTeam}", P(r, u, id)));
 
 user.MapGet("/teams/{id:long}/players", (long id) => Query("""
-    SELECT u.id, u.username, m.is_captain AS isCaptain
+    SELECT u.id, u.username, u.display_name AS displayName, m.is_captain AS isCaptain
     FROM team_members m JOIN users u ON u.id = m.user_id
     WHERE m.team_id = @id ORDER BY m.is_captain DESC, u.username
     """, new { id }));
@@ -315,7 +336,12 @@ static class Check
     public static bool Len(string? s, int min, int max) => (s?.Trim().Length ?? 0) is var n && n >= min && n <= max;
 }
 
-record Credentials(string? Username, string? Password);
+record Credentials(string? Username, string? Password, string? DisplayName);
+
+record DisplayNameReq(string? DisplayName) : IValid
+{
+    public string? Error() => Check.Len(DisplayName, 1, 100) ? null : "Nazwa wyświetlana: 1–100 znaków.";
+}
 
 record NameReq(string? Name) : IValid
 {
