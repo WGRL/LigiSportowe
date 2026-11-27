@@ -84,9 +84,10 @@ const day = (value) => value?.slice(0, 10) ?? "…";
 
 function render() {
   const { user, season } = state;
-  $("#user-label").textContent = user?.username ?? "";
+  $("#user-label").textContent = user?.displayName ?? "";
   $("#user-label").hidden = !user;
   $("#login-button").hidden = !!user;
+  $("#profile-button").hidden = !user;
   $("#logout-button").hidden = !user;
   $("#league-count").textContent = state.leagues.length;
   $("#upcoming-count").textContent = state.games.filter((g) => g.homeScore === null).length;
@@ -199,7 +200,7 @@ function renderTeams() {
 
 function renderRoster(teamId, org, manage) {
   const rows = state.players.map((p) => `<li>
-      <span>${esc(p.username)}${p.isCaptain ? ' <span class="status-pill">Kapitan</span>' : ""}</span>
+      <span title="Nazwa użytkownika: ${esc(p.username)}">${esc(p.displayName || p.username)}${p.isCaptain ? ' <span class="status-pill">Kapitan</span>' : ""}</span>
       <span class="toolbar">
         ${org && !p.isCaptain ? btn("make-captain", teamId, "Ustaw kapitanem", false, p.id) : ""}
         ${manage ? btn("remove-player", teamId, "Usuń", false, p.id) : ""}
@@ -221,7 +222,7 @@ function openForm(title, fields, submit) {
     input.name = f.name;
     if (f.options) input.append(...f.options.map(([value, text]) => new Option(text, value)));
     else input.type = f.type ?? "text";
-    for (const key of ["required", "min", "max", "maxLength"]) if (f[key] !== undefined) input[key] = f[key];
+    for (const key of ["required", "min", "max", "maxLength", "readOnly"]) if (f[key] !== undefined) input[key] = f[key];
     input.value = f.value ?? "";
     return label;
   }));
@@ -233,7 +234,7 @@ $("#edit-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = {};
   for (const el of event.currentTarget.elements) {
-    if (!el.name) continue;
+    if (!el.name || el.readOnly) continue;
     const numeric = el.type === "number" || el.tagName === "SELECT";
     data[el.name] = el.value === "" ? null : numeric ? Number(el.value) : el.value;
   }
@@ -276,6 +277,15 @@ const actions = {
   "show-register": () => setAuthView("register"),
   "show-login": () => setAuthView("login"),
   "close-dialog": (_, el) => el.closest("dialog").close(),
+  "edit-profile": () => openForm("Edytuj nazwę wyświetlaną",
+    [
+      { name: "username", label: "Nazwa użytkownika — użyj jej do zaproszeń", value: state.user?.username, readOnly: true },
+      { name: "displayName", label: "Nazwa wyświetlana", required: true, maxLength: 100, value: state.user?.displayName }
+    ],
+    async (d) => {
+      await api("/api/auth/profile", "PUT", d);
+      await refreshSession();
+    }),
   "logout": async () => {
     await api("/api/auth/logout", "POST");
     state.openTeam = null;
@@ -408,6 +418,7 @@ $("#register-form").addEventListener("submit", async (event) => {
   const form = event.currentTarget;
   const data = new FormData(form);
   const username = String(data.get("username") ?? "").trim();
+  const displayName = String(data.get("displayName") ?? "").trim();
   const password = String(data.get("password") ?? "");
   const passwordRepeat = String(data.get("passwordRepeat") ?? "");
   const message = $("#register-message");
@@ -430,6 +441,14 @@ $("#register-form").addEventListener("submit", async (event) => {
     message.textContent = "Nazwa użytkownika może zawierać tylko litery, cyfry, kropkę, podkreślenie i myślnik.";
     return;
   }
+  if (!displayName) {
+    message.textContent = "Podaj nazwę wyświetlaną.";
+    return;
+  }
+  if (displayName.length > 100) {
+    message.textContent = "Nazwa wyświetlana może mieć maksymalnie 100 znaków.";
+    return;
+  }
   if (password.length < 8) {
     message.textContent = "Hasło musi mieć co najmniej 8 znaków.";
     return;
@@ -447,7 +466,7 @@ $("#register-form").addEventListener("submit", async (event) => {
     return;
   }
   try {
-    await api("/api/auth/register", "POST", { username, password });
+    await api("/api/auth/register", "POST", { username, displayName, password });
     form.reset();
     setAuthView("login");
     $("#login-form").elements.username.value = data.get("username");
