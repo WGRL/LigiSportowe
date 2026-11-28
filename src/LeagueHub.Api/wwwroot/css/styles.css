@@ -681,3 +681,49 @@ h2 {
 .notice.notice-success {
   background: var(--accent);
 }
+
+/* ---------- Powiadomienia ---------- */
+.notifications-button {
+  position: relative;
+}
+
+.badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  color: #fff;
+  background: var(--danger);
+  border: 2px solid var(--bg, #f6f7f5);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 750;
+  line-height: 15px;
+  text-align: center;
+}
+
+#notifications-dialog {
+  width: min(520px, calc(100% - 24px));
+}
+
+#notifications-dialog h2 {
+  margin-bottom: 16px;
+}
+
+.invitation {
+  flex-wrap: wrap;
+}
+
+.notifications-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+
+.status-muted {
+  color: var(--muted);
+  background: var(--surface-muted);
+}

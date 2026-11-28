@@ -30,7 +30,7 @@ public static class LeagueEndpoints
             """, DbExecutor.Params(request, principal, id)));
 
         api.MapGet("/leagues/{id:long}/teams", (long id, DbExecutor db) => db.Query("""
-            SELECT t.id, t.name, c.user_id AS captainId, u.display_name AS captain,
+            SELECT t.id, t.name, t.independent_team_id AS independentTeamId, c.user_id AS captainId, u.display_name AS captain,
                    (SELECT COUNT(*) FROM team_members m WHERE m.team_id = t.id) AS players
             FROM teams t
             LEFT JOIN team_members c ON c.team_id = t.id AND c.is_captain

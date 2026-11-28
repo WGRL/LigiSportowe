@@ -9,7 +9,11 @@ const NEXT_STATUS = { preparation: "Rozpocznij sezon", ongoing: "Zakończ sezon"
 const state = {
   user: null, myTeams: [], leagues: [], league: null, seasons: [], season: null,
   teams: [], games: [], standings: [], openTeam: null, players: [],
-  templates: { formats: [], strategies: [], scheduleSystems: [] }, openGame: null, lineup: []
+  templates: { formats: [], strategies: [], scheduleSystems: [] }, openGame: null, lineup: [],
+  // Drużyny poza ligą i zaproszenia do nich (powiadomienia).
+  ownTeams: [], openOwnTeam: null, ownRoster: { members: [], invitations: [] }, invitations: [],
+  // Zaproszenia do lig (dla właściciela drużyny), powiadomienia informacyjne, oczekujące zaproszenia ligi (dla organizatora).
+  leagueInvitations: [], messages: [], leagueTeamInvites: []
 };
 
 // Domyślny format kadry zgadywany z dyscypliny ligi (organizator może go zmienić).
@@ -48,8 +52,19 @@ async function refreshSession() {
   if (!state.templates.formats.length) state.templates = await api("/api/lineup-templates");
   const me = await api("/api/auth/me");
   state.user = me.authenticated ? me : null;
-  state.myTeams = state.user ? await api("/api/me/teams") : [];
+  await loadMine();
   await loadLeagues(state.league?.id);
+}
+
+// Dane zalogowanego użytkownika: drużyny w ligach, drużyny poza ligą, zaproszenia.
+async function loadMine() {
+  [state.myTeams, state.ownTeams] = state.user
+    ? await Promise.all([api("/api/me/teams"), api("/api/independent-teams"), loadNotifications()])
+    : [[], [], setNotifications({})];
+  if (!state.ownTeams.some((t) => t.id === state.openOwnTeam)) state.openOwnTeam = null;
+  state.ownRoster = state.openOwnTeam
+    ? await api(`/api/independent-teams/${state.openOwnTeam}/members`)
+    : { members: [], invitations: [] };
 }
 
 async function loadLeagues(selectId) {
@@ -61,9 +76,11 @@ async function loadLeagues(selectId) {
 async function selectLeague(id, seasonId) {
   if (state.league?.id !== id) state.openTeam = state.openGame = null;
   state.league = state.leagues.find((l) => l.id === id);
-  [state.seasons, state.teams] = await Promise.all([
-    api(`/api/leagues/${id}/seasons`), api(`/api/leagues/${id}/teams`)
+  [state.seasons, state.teams, state.leagueTeamInvites] = await Promise.all([
+    api(`/api/leagues/${id}/seasons`), api(`/api/leagues/${id}/teams`),
+    isOrganizer() ? api(`/api/leagues/${id}/invitations`) : []
   ]);
+  if (!team(state.openTeam)) state.openTeam = null;
   await selectSeason(seasonId);
 }
 
@@ -85,9 +102,17 @@ async function loadPlayers() {
   render();
 }
 
+async function loadNotifications() {
+  setNotifications(await api("/api/notifications"));
+}
+
+function setNotifications({ invitations = [], leagueInvitations = [], messages = [] }) {
+  Object.assign(state, { invitations, leagueInvitations, messages });
+}
+
 async function reload() {
-  state.myTeams = state.user ? await api("/api/me/teams") : [];
-  await selectLeague(state.league.id, state.season?.id);
+  await loadMine();
+  state.league ? await selectLeague(state.league.id, state.season?.id) : render();
 }
 
 // ---------- Widok ----------
@@ -106,12 +131,16 @@ function render() {
   $("#login-button").hidden = !!user;
   $("#profile-button").hidden = !user;
   $("#logout-button").hidden = !user;
+  $("#notifications-button").hidden = !user;
+  renderNotifications();
   $("#league-count").textContent = state.leagues.length;
   $("#upcoming-count").textContent = state.games.filter((g) => g.homeScore === null).length;
-  $("#my-teams").textContent = user ? state.myTeams.length : "—";
+  $("#my-teams").textContent = user ? state.myTeams.length + state.ownTeams.length : "—";
   $("[data-action=new-league]").hidden = !user;
+  $("[data-action=new-own-team]").hidden = !user;
   $("[data-action=edit-league]").hidden = !isOrganizer();
   $("[data-action=new-team]").hidden = !isOrganizer();
+  $("[data-action=invite-team]").hidden = !isOrganizer();
   $("[data-action=new-game]").hidden = !(isOrganizer() && season && season.status !== "finished" && state.teams.length > 1);
   $("[data-action=generate-schedule]").hidden = !(isOrganizer() && season && season.status !== "finished");
   renderLeagues();
@@ -119,6 +148,7 @@ function render() {
   renderStandings();
   renderGames();
   renderTeams();
+  renderOwnTeams();
 }
 
 function renderLeagues() {
@@ -233,16 +263,24 @@ function renderTeams() {
         return `<div class="team">
           <div class="list-item">
             <span><strong>${esc(t.name)}</strong>${mine ? ' <span class="status-pill">Moja drużyna</span>' : ""}
+              ${t.independentTeamId ? ' <span class="status-pill status-muted" title="Dołączyła z zaproszenia do ligi">Spoza ligi</span>' : ""}
               <small>Kapitan: ${t.captain ? esc(t.captain) : "brak"} · zawodników: ${t.players}</small></span>
             <span class="toolbar">
               ${manage ? btn("rename-team", t.id, "Zmień nazwę") : ""}
+              ${org ? btn("remove-team", t.id, "Usuń z ligi") : ""}
               ${state.user ? btn("toggle-team", t.id, open ? "Ukryj skład" : "Skład") : ""}
             </span>
           </div>
           ${open ? renderRoster(t.id, org, manage) : ""}
         </div>`;
       }).join("")}</div>`
-    : empty("◎", org ? "Dodaj drużyny przyciskiem +." : "Brak drużyn w tej lidze.");
+    : empty("◎", org ? "Dodaj drużyny przyciskiem + albo zaproś drużynę spoza ligi." : "Brak drużyn w tej lidze.");
+  if (org && state.leagueTeamInvites.length) $("#team-list").insertAdjacentHTML("beforeend", `
+    <p class="lineup-label">Zaproszone drużyny — czekają na odpowiedź kapitana</p>
+    <div class="list">${state.leagueTeamInvites.map((i) => `<div class="list-item">
+      <span><strong>${esc(i.team)}</strong> <span class="status-pill status-preparation">Zaproszona</span>
+        <small>Kapitan: <span title="Nazwa użytkownika: ${esc(i.captainUsername)}">${esc(i.captain)}</span> · ${formatDate(i.createdAt)}</small></span>
+      <span class="toolbar">${btn("cancel-league-invitation", i.id, "Wycofaj")}</span></div>`).join("")}</div>`);
 }
 
 function renderRoster(teamId, org, manage) {
@@ -256,10 +294,81 @@ function renderRoster(teamId, org, manage) {
     ${manage ? `<div class="toolbar roster-actions">${btn("add-player", teamId, "Dodaj zawodnika", true)}</div>` : ""}`;
 }
 
+// ---------- Drużyny poza ligą ----------
+const isOwner = (t) => !!state.user && t.ownerId === state.user.id;
+const ownTeam = (id) => state.ownTeams.find((t) => t.id === id);
+const personName = (p) => `<span title="Nazwa użytkownika: ${esc(p.username)}">${esc(p.displayName || p.username)}</span>`;
+
+function renderOwnTeams() {
+  $("#own-team-list").innerHTML = !state.user
+    ? empty("◎", "Zaloguj się, aby założyć własną drużynę i zapraszać do niej znajomych.")
+    : state.ownTeams.length
+      ? `<div class="list">${state.ownTeams.map((t) => {
+          const open = t.id === state.openOwnTeam, owner = isOwner(t);
+          return `<div class="team">
+            <div class="list-item">
+              <span><strong>${esc(t.name)}</strong>${owner ? ' <span class="status-pill">Właściciel</span>' : ""}
+                <small>Założyciel: ${esc(t.owner)} · zawodników: ${t.players}</small></span>
+              <span class="toolbar">
+                ${owner ? btn("rename-own-team", t.id, "Zmień nazwę") + btn("delete-own-team", t.id, "Usuń") : btn("leave-own-team", t.id, "Opuść")}
+                ${btn("toggle-own-team", t.id, open ? "Ukryj skład" : "Skład")}
+              </span>
+            </div>
+            ${open ? renderOwnRoster(t, owner) : ""}
+          </div>`;
+        }).join("")}</div>`
+      : empty("◎", "Nie należysz do żadnej drużyny poza ligą. Załóż ją przyciskiem +.");
+}
+
+function renderOwnRoster(t, owner) {
+  const { members, invitations } = state.ownRoster;
+  const rows = members.map((p) => `<li>
+      <span>${personName(p)}${p.isOwner ? ' <span class="status-pill">Właściciel</span>' : ""}</span>
+      ${owner && !p.isOwner ? `<span class="toolbar">${btn("remove-own-member", t.id, "Usuń", false, p.id)}</span>` : ""}</li>`).join("");
+  const pending = invitations.map((p) => `<li>
+      <span>${personName(p)} <span class="status-pill status-preparation">Zaproszony</span></span>
+      <span class="toolbar">${btn("cancel-invitation", t.id, "Wycofaj", false, p.id)}</span></li>`).join("");
+  return `<ul class="roster">${rows}${pending}</ul>
+    ${owner ? `<div class="toolbar roster-actions">${btn("invite-player", t.id, "Zaproś zawodnika", true)}</div>` : ""}`;
+}
+
+// ---------- Powiadomienia (zaproszenia) ----------
+function renderNotifications() {
+  const { invitations, leagueInvitations, messages } = state;
+  const count = invitations.length + leagueInvitations.length + messages.length;
+  $("#notifications-badge").textContent = count > 9 ? "9+" : count;
+  $("#notifications-badge").hidden = !count;
+  $("#notifications-button").setAttribute("aria-label", count ? `Powiadomienia: ${count} nowe` : "Powiadomienia");
+  const section = (title, items, extra = "") => items.length
+    ? `<div class="notifications-head"><p class="lineup-label">${title}</p>${extra}</div><div class="list">${items.join("")}</div>` : "";
+  const item = (title, text, at, actions) => `<div class="list-item invitation">
+      <span><strong>${title}</strong><small>${text} · ${formatDate(at)}</small></span>
+      <span class="toolbar">${actions}</span></div>`;
+  $("#notifications-list").innerHTML = count
+    ? section("Zaproszenia do drużyn", invitations.map((i) => item(esc(i.team), `${esc(i.invitedBy)} zaprasza Cię do drużyny`, i.createdAt,
+        btn("accept-invitation", i.id, "Akceptuj", true) + btn("reject-invitation", i.id, "Odrzuć")))) +
+      section("Zaproszenia do lig", leagueInvitations.map((i) => item(esc(i.league),
+        `${esc(i.invitedBy)} zaprasza Twoją drużynę <strong>${esc(i.team)}</strong> do ligi (${esc(i.sport)})`, i.createdAt,
+        btn("accept-league-invitation", i.id, "Akceptuj", true) + btn("reject-league-invitation", i.id, "Odrzuć")))) +
+      section("Powiadomienia", messages.map((m) => item(esc(m.message), "", m.createdAt, btn("dismiss-notification", m.id, "OK"))),
+        messages.length > 1 ? `<button class="text-button" type="button" data-action="dismiss-all-notifications">Wyczyść wszystkie</button>` : "")
+    : empty("✉", "Brak nowych powiadomień.");
+}
+
+// Sprawdzanie nowych zaproszeń w tle (bez komunikatów o błędach, np. po wygaśnięciu sesji).
+setInterval(async () => {
+  if (!state.user || document.hidden) return;
+  try {
+    await loadNotifications();
+    renderNotifications();
+  } catch { /* spróbujemy przy następnym odświeżeniu */ }
+}, 30000);
+
 // ---------- Uniwersalny formularz ----------
-let formSubmit = null;
+let formSubmit = null, formGeneration = 0;
 
 function openForm(title, fields, submit) {
+  formGeneration++;
   $("#form-title").textContent = title;
   $("#form-message").textContent = "";
   $("#form-fields").replaceChildren(...fields.map((f) => {
@@ -292,9 +401,10 @@ $("#edit-form").addEventListener("submit", async (event) => {
     const numeric = el.type === "number" || (el.tagName === "SELECT" && !el.dataset.text);
     data[el.name] = el.value === "" ? null : numeric ? Number(el.value) : el.value;
   }
+  const generation = formGeneration;
   try {
     await formSubmit(data);
-    $("#form-dialog").close();
+    if (generation === formGeneration) $("#form-dialog").close();
   } catch (error) {
     $("#form-message").textContent = error.message;
   }
@@ -393,10 +503,108 @@ const actions = {
     }),
   "logout": async () => {
     await api("/api/auth/logout", "POST");
-    state.openTeam = null;
+    state.openTeam = state.openOwnTeam = null;
     await refreshSession();
   },
   "select-league": ({ id }) => selectLeague(id),
+  "open-notifications": async () => {
+    $("#notifications-dialog").showModal();
+    await loadNotifications();
+    renderNotifications();
+  },
+  "accept-league-invitation": async ({ id }) => {
+    const invitation = state.leagueInvitations.find((i) => i.id === id);
+    const { leagueId } = await api(`/api/league-invitations/${id}/accept`, "POST");
+    state.league = { id: leagueId };
+    await refreshSession();
+    notify(`Drużyna ${invitation?.team ?? ""} dołączyła do ligi ${invitation?.league ?? ""}.`, true);
+  },
+  "reject-league-invitation": async ({ id }) => {
+    await api(`/api/league-invitations/${id}/reject`, "POST");
+    await reload();
+  },
+  "dismiss-notification": async ({ id }) => {
+    await api(`/api/notifications/${id}`, "DELETE");
+    await loadNotifications();
+    renderNotifications();
+  },
+  "dismiss-all-notifications": async () => {
+    await api("/api/notifications", "DELETE");
+    await loadNotifications();
+    renderNotifications();
+  },
+  "invite-team": () => openForm(`Zaproś drużynę do ligi ${state.league.name}`,
+    [{ name: "username", label: "Nazwa użytkownika kapitana", required: true, maxLength: 32,
+       hint: "Kapitan to właściciel drużyny poza ligą. W następnym kroku wybierzesz jego drużynę." }],
+    async ({ username }) => {
+      const teams = await api(`/api/users/${encodeURIComponent(username.trim())}/independent-teams`);
+      if (!teams.length) throw new Error(`Użytkownik ${username} nie jest kapitanem żadnej drużyny poza ligą.`);
+      openForm(`Zaproś drużynę do ligi ${state.league.name}`, [
+        { name: "independentTeamId", label: `Drużyna użytkownika ${username}`, value: teams[0].id,
+          options: teams.map((t) => [t.id, `${t.name} — zawodników: ${t.players}`]),
+          hint: "Kapitan dostanie zaproszenie w powiadomieniach. Po akceptacji drużyna dołączy do ligi z całym składem." }
+      ], async (d) => {
+        await api(`/api/leagues/${state.league.id}/invitations`, "POST", d);
+        notify("Wysłano zaproszenie do ligi.", true);
+      });
+    }),
+  "cancel-league-invitation": async ({ id }) => {
+    await api(`/api/leagues/${state.league.id}/invitations/${id}`, "DELETE");
+    await reload();
+  },
+  "remove-team": async ({ id }) => {
+    if (!confirm(`Usunąć drużynę ${team(id).name} z ligi? Jej zaplanowane mecze zostaną usunięte, a zawodnicy dostaną powiadomienie.`)) return;
+    await api(`/api/teams/${id}`, "DELETE");
+    await reload();
+    notify(`Usunięto drużynę z ligi.`, true);
+  },
+  "accept-invitation": async ({ id }) => {
+    const invitation = state.invitations.find((i) => i.id === id);
+    await api(`/api/invitations/${id}/accept`, "POST");
+    state.openOwnTeam = invitation?.teamId ?? state.openOwnTeam;
+    await reload();
+    notify(`Dołączono do drużyny ${invitation?.team ?? ""}.`, true);
+  },
+  "reject-invitation": async ({ id }) => {
+    await api(`/api/invitations/${id}/reject`, "POST");
+    await reload();
+  },
+  "new-own-team": () => openForm("Nowa drużyna poza ligą", [{ name: "name", label: "Nazwa", required: true, maxLength: 60,
+      hint: "Zostaniesz jej właścicielem i będziesz zapraszać zawodników po nazwie użytkownika." }],
+    async (d) => { state.openOwnTeam = (await api("/api/independent-teams", "POST", d)).id; }),
+  "rename-own-team": ({ id }) => openForm("Zmień nazwę drużyny",
+    [{ name: "name", label: "Nazwa", required: true, maxLength: 60, value: ownTeam(id).name }],
+    (d) => api(`/api/independent-teams/${id}`, "PUT", d)),
+  "delete-own-team": async ({ id }) => {
+    if (!confirm(`Usunąć drużynę ${ownTeam(id).name}? Zawodnicy i zaproszenia zostaną usunięci.`)) return;
+    await api(`/api/independent-teams/${id}`, "DELETE");
+    await reload();
+  },
+  "leave-own-team": async ({ id }) => {
+    if (!confirm(`Opuścić drużynę ${ownTeam(id).name}?`)) return;
+    await api(`/api/independent-teams/${id}/members/${state.user.id}`, "DELETE");
+    await reload();
+  },
+  "toggle-own-team": ({ id }) => {
+    state.openOwnTeam = state.openOwnTeam === id ? null : id;
+    return reload();
+  },
+  "invite-player": ({ id }) => openForm(`Zaproś zawodnika — ${ownTeam(id).name}`,
+    [{ name: "username", label: "Nazwa użytkownika", required: true, maxLength: 32,
+       hint: "Zaproszenie trafi do powiadomień tej osoby — może je zaakceptować lub odrzucić." }],
+    async (d) => {
+      await api(`/api/independent-teams/${id}/invitations`, "POST", d);
+      notify(`Wysłano zaproszenie do ${d.username}.`, true);
+    }),
+  "cancel-invitation": async ({ id, user }) => {
+    await api(`/api/independent-teams/${id}/invitations/${user}`, "DELETE");
+    await reload();
+  },
+  "remove-own-member": async ({ id, user }) => {
+    if (!confirm("Usunąć zawodnika z drużyny?")) return;
+    await api(`/api/independent-teams/${id}/members/${user}`, "DELETE");
+    await reload();
+  },
   "new-league": () => leagueForm("Nowa liga", {}, async (d) => {
     const { id } = await api("/api/leagues", "POST", d);
     state.leagues = await api("/api/leagues");

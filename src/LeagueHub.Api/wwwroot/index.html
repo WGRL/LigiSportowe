@@ -20,9 +20,14 @@
       <a href="#schedule">Terminarz</a>
       <a href="#results">Wyniki</a>
       <a href="#teams">Drużyny</a>
+      <a href="#own-teams">Moje drużyny</a>
     </nav>
 
     <div class="auth-actions">
+      <button id="notifications-button" class="icon-button notifications-button" type="button" data-action="open-notifications" aria-label="Powiadomienia" hidden>
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span id="notifications-badge" class="badge" hidden></span>
+      </button>
       <span id="user-label" class="user-label" hidden></span>
       <button id="login-button" class="button button-primary" type="button" data-action="login">Zaloguj się</button>
       <button id="profile-button" class="button button-ghost" type="button" data-action="edit-profile" hidden>Edytuj nazwę</button>
@@ -90,9 +95,20 @@
       <section id="teams" class="panel panel-wide">
         <div class="panel-heading">
           <div><p class="section-kicker">Uczestnicy</p><h2>Drużyny</h2></div>
-          <button class="icon-button" type="button" data-action="new-team" aria-label="Dodaj drużynę" hidden>+</button>
+          <span class="toolbar">
+            <button class="button button-ghost button-small" type="button" data-action="invite-team" hidden>Zaproś drużynę spoza ligi</button>
+            <button class="icon-button" type="button" data-action="new-team" aria-label="Dodaj drużynę" hidden>+</button>
+          </span>
         </div>
         <div id="team-list"></div>
+      </section>
+
+      <section id="own-teams" class="panel panel-wide">
+        <div class="panel-heading">
+          <div><p class="section-kicker">Poza ligą</p><h2>Moje drużyny</h2></div>
+          <button class="icon-button" type="button" data-action="new-own-team" aria-label="Załóż drużynę" hidden>+</button>
+        </div>
+        <div id="own-team-list"></div>
       </section>
     </section>
   </main>
@@ -160,6 +176,15 @@
         <p id="form-message" class="form-message" role="status"></p>
         <button class="button button-primary button-block" type="submit">Zapisz</button>
       </form>
+    </div>
+  </dialog>
+
+  <dialog id="notifications-dialog" class="dialog">
+    <div class="dialog-card">
+      <button class="dialog-close" type="button" data-action="close-dialog" aria-label="Zamknij">×</button>
+      <p class="section-kicker">Konto</p>
+      <h2>Powiadomienia</h2>
+      <div id="notifications-list"></div>
     </div>
   </dialog>
 

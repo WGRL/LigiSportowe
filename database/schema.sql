@@ -55,9 +55,11 @@ CREATE TABLE teams (
     id         BIGINT      NOT NULL AUTO_INCREMENT PRIMARY KEY,
     league_id  BIGINT      NOT NULL,
     name       VARCHAR(60) NOT NULL,
+    independent_team_id BIGINT NULL,                          -- drużyna poza ligą, z której powstała (zaproszenie do ligi); FK niżej
     created_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_teams_league_name (league_id, name),
     UNIQUE KEY uq_teams_id_league (id, league_id),            -- cel złożonych FK
+    UNIQUE KEY uq_teams_league_independent (league_id, independent_team_id), -- drużyna poza ligą gra w lidze co najwyżej raz
     CONSTRAINT fk_teams_league FOREIGN KEY (league_id) REFERENCES leagues (id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
@@ -109,4 +111,66 @@ CREATE TABLE game_lineups (
     CONSTRAINT fk_lineups_game FOREIGN KEY (game_id) REFERENCES games (id) ON DELETE CASCADE,
     CONSTRAINT fk_lineups_team FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE CASCADE,
     CONSTRAINT fk_lineups_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Drużyny poza ligą: zakłada je dowolny zalogowany użytkownik (właściciel) i zaprasza do nich innych po nazwie użytkownika.
+-- Właściciel jest zawsze członkiem swojej drużyny. Zaproszenie czeka, aż zaproszony je przyjmie albo odrzuci.
+CREATE TABLE independent_teams (
+    id         BIGINT      NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    owner_id   BIGINT      NOT NULL,
+    name       VARCHAR(60) NOT NULL,
+    created_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_independent_teams_owner_name (owner_id, name),
+    CONSTRAINT fk_independent_teams_owner FOREIGN KEY (owner_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE independent_team_members (
+    team_id   BIGINT   NOT NULL,
+    user_id   BIGINT   NOT NULL,
+    joined_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (team_id, user_id),
+    KEY ix_independent_members_user (user_id),
+    CONSTRAINT fk_independent_members_team FOREIGN KEY (team_id) REFERENCES independent_teams (id) ON DELETE CASCADE,
+    CONSTRAINT fk_independent_members_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE team_invitations (
+    id         BIGINT   NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    team_id    BIGINT   NOT NULL,
+    user_id    BIGINT   NOT NULL,                              -- zaproszony
+    invited_by BIGINT   NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_invitations_team_user (team_id, user_id),    -- jedno oczekujące zaproszenie na osobę
+    KEY ix_invitations_user (user_id),
+    CONSTRAINT fk_invitations_team    FOREIGN KEY (team_id) REFERENCES independent_teams (id) ON DELETE CASCADE,
+    CONSTRAINT fk_invitations_user    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+    CONSTRAINT fk_invitations_inviter FOREIGN KEY (invited_by) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+ALTER TABLE teams ADD CONSTRAINT fk_teams_independent
+    FOREIGN KEY (independent_team_id) REFERENCES independent_teams (id) ON DELETE SET NULL;
+
+-- Zaproszenie drużyny poza ligą do ligi: wysyła organizator, przyjmuje albo odrzuca właściciel (kapitan) drużyny.
+-- Po przyjęciu w lidze powstaje drużyna o tej samej nazwie i składzie, a właściciel zostaje jej kapitanem.
+CREATE TABLE league_invitations (
+    id                  BIGINT   NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    league_id           BIGINT   NOT NULL,
+    independent_team_id BIGINT   NOT NULL,
+    invited_by          BIGINT   NOT NULL,
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_league_invitations_team (league_id, independent_team_id),
+    KEY ix_league_invitations_team (independent_team_id),
+    CONSTRAINT fk_league_invitations_league  FOREIGN KEY (league_id) REFERENCES leagues (id) ON DELETE CASCADE,
+    CONSTRAINT fk_league_invitations_team    FOREIGN KEY (independent_team_id) REFERENCES independent_teams (id) ON DELETE CASCADE,
+    CONSTRAINT fk_league_invitations_inviter FOREIGN KEY (invited_by) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Powiadomienia informacyjne (np. „drużyna została usunięta z ligi”) — użytkownik je odczytuje i zamyka.
+CREATE TABLE notifications (
+    id         BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id    BIGINT       NOT NULL,
+    message    VARCHAR(300) NOT NULL,
+    created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY ix_notifications_user (user_id, created_at),
+    CONSTRAINT fk_notifications_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB;

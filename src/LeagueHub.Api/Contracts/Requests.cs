@@ -33,6 +33,11 @@ public record PlayerReq(string? Username) : IValid
 
 public record CaptainReq(long UserId);
 
+public record LeagueInviteReq(long IndependentTeamId) : IValid
+{
+    public string? Error() => IndependentTeamId > 0 ? null : "Wybierz drużynę do zaproszenia.";
+}
+
 public record LeagueReq(string? Name, string? Sport, string? Description) : IValid
 {
     public string? Error() => Check.Len(Name, 1, 100) && Check.Len(Sport, 1, 60) && Check.Len(Description, 0, 500)

@@ -65,6 +65,8 @@ AuthEndpoints.Map(api, auth, user);
 LeagueEndpoints.Map(api, user);
 SeasonEndpoints.Map(api, user);
 TeamEndpoints.Map(user);
+IndependentTeamEndpoints.Map(user);
+LeagueInvitationEndpoints.Map(user);
 GameEndpoints.Map(api, user);
 
 app.Run();

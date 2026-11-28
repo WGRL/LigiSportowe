@@ -32,6 +32,11 @@ Prosta aplikacja do prowadzenia amatorskich lig sportowych: ligi, sezony, druży
 users ──< leagues (organizator) ──< seasons ──< games >── teams (gospodarz/gość)
                                 └─< teams ──< team_members >── users  (is_captain)
 games ──< game_lineups >── users   (kadra meczowa: pierwszy skład / rezerwowi)
+users ──< independent_teams (właściciel) ──< independent_team_members >── users
+                                         ├─< team_invitations >── users   (oczekujące zaproszenia do drużyny)
+                                         └─< league_invitations >── leagues (oczekujące zaproszenia do ligi)
+teams.independent_team_id → independent_teams   (drużyna ligowa powstała z drużyny poza ligą)
+users ──< notifications   (powiadomienia informacyjne)
 ```
 
 - **Liga** to trwały byt; **sezon** ma własne parametry (daty, punktacja Z/R/P) i stan: `preparation → ongoing → finished`.
@@ -55,6 +60,29 @@ metodą Bergera, jak w ligach piłkarskich (`Scheduling/RoundRobin.cs`, `POST /a
 - Działa też w trakcie sezonu. Jeśli sezon ma już mecze, organizator wybiera jedną z dwóch opcji:
   **zostaw i dopisz brakujące pary** (np. po dołączeniu nowej drużyny) albo **ułóż zaplanowane od nowa**.
   Rozegrane mecze zawsze zostają i liczą się jako odbyte pary. Nowe mecze dostają kolejne numery kolejek.
+
+## Drużyny poza ligą i zaproszenia
+
+Każdy zalogowany użytkownik może w panelu **„Moje drużyny”** założyć drużynę, która nie należy do żadnej ligi
+(`Endpoints/IndependentTeamEndpoints.cs`). Zakładający zostaje jej właścicielem i zaprasza zawodników po **nazwie użytkownika**.
+
+- Jeśli konto o tej nazwie istnieje, zaproszony dostaje powiadomienie. Przycisk z dzwonkiem jest w nagłówku obok przycisków konta,
+  a licznik pokazuje oczekujące zaproszenia (odświeżany co 30 s). Zaproszenie można **zaakceptować** albo **odrzucić**.
+- Właściciel widzi oczekujące zaproszenia w składzie i może je wycofać. Może też usuwać zawodników, zmieniać nazwę i usunąć drużynę.
+- Zawodnik może sam opuścić drużynę. Skład widzą tylko członkowie drużyny.
+
+### Dołączanie do ligi i usuwanie z ligi (`Endpoints/LeagueInvitationEndpoints.cs`)
+
+- Organizator w panelu „Drużyny” klika **Zaproś drużynę spoza ligi**. Wpisuje nazwę użytkownika kapitana, czyli właściciela drużyny,
+  i wybiera jedną z jego drużyn. Kapitan dostaje zaproszenie do ligi w powiadomieniach.
+- Po akceptacji w lidze powstaje drużyna o tej samej nazwie i ze wszystkimi zawodnikami. Właściciel zostaje kapitanem.
+  Organizator i pozostali zawodnicy dostają powiadomienie, a o odrzuceniu zaproszenia dowiaduje się organizator.
+  Skład jest kopiowany jednorazowo: późniejsze zmiany w drużynie poza ligą nie zmieniają drużyny ligowej.
+- Akceptacja się nie uda, gdy w lidze jest już drużyna o tej nazwie albo któryś zawodnik gra już w innej drużynie tej ligi.
+  Zaproszenie wtedy zostaje i można je przyjąć po usunięciu konfliktu. Organizator może wycofać oczekujące zaproszenie.
+- **Usuń z ligi** (organizator): drużyna i jej zaplanowane mecze znikają, a **każdy zawodnik dostaje powiadomienie**.
+  Drużyny z rozegranymi meczami nie można usunąć, bo zmieniłoby to historię tabeli. Można najpierw cofnąć wyniki w trwającym sezonie.
+- Powiadomienia informacyjne zamyka się przyciskiem „OK” albo „Wyczyść wszystkie”.
 
 ## Kadra meczowa (automatyczny dobór zawodników)
 
@@ -93,7 +121,8 @@ Po wpisaniu wyniku kadra zostaje w historii bez zmian.
 | Gość | przeglądać ligi, sezony, drużyny, terminarz, wyniki i tabelę |
 | Zawodnik | j.w. + widzieć składy i swoje drużyny |
 | Kapitan | j.w. + zmieniać nazwę drużyny, dodawać/usuwać zawodników, losować ponownie kadrę meczową swojej drużyny |
-| Organizator (twórca ligi) | wszystko w swojej lidze: edycja ligi, sezony i ich stan, drużyny, kapitanowie, terminarz, wyniki |
+| Właściciel drużyny poza ligą | zapraszać zawodników, wycofywać zaproszenia, usuwać zawodników, zmieniać nazwę i usuwać drużynę |
+| Organizator (twórca ligi) | wszystko w swojej lidze: edycja ligi, sezony i ich stan, drużyny (dodawanie, zapraszanie spoza ligi, usuwanie), kapitanowie, terminarz, wyniki |
 
 Reguły sezonu: parametry edytowalne tylko w przygotowaniu; wyniki wpisywane/poprawiane tylko w trwającym sezonie;
 zakończony sezon jest tylko do odczytu; zmiana stanu tylko do przodu.
