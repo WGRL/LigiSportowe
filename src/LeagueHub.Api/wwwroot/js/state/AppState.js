@@ -1,5 +1,3 @@
-import { SPORT_FORMATS } from "../core/constants.js";
-
 /**
  * Cały stan aplikacji w jednym miejscu oraz zapytania o niego (selektory).
  * Uprawnienia liczone tutaj służą tylko do ukrywania przycisków — serwer i tak sprawdza je ponownie.
@@ -16,7 +14,8 @@ export class AppState {
   standings = [];
   openTeam = null;
   players = [];
-  templates = { formats: [], strategies: [], scheduleSystems: [] };
+  teamPending = [];       // oczekujące zaproszenia do otwartej drużyny ligowej (dla kapitana/organizatora)
+  templates = { strategies: [], scheduleSystems: [] };
   openGame = null;
   lineup = [];
   // Drużyny poza ligą i zaproszenia do nich (powiadomienia).
@@ -26,6 +25,7 @@ export class AppState {
   invitations = [];
   // Zaproszenia do lig (dla właściciela drużyny), powiadomienia informacyjne, oczekujące zaproszenia ligi (dla organizatora).
   leagueInvitations = [];
+  teamInvitations = [];   // zaproszenia zalogowanego zawodnika do drużyn w ligach
   messages = [];
   leagueTeamInvites = [];
 
@@ -39,12 +39,16 @@ export class AppState {
   game(id) { return this.games.find((g) => g.id === id); }
   ownTeam(id) { return this.ownTeams.find((t) => t.id === id); }
 
-  // ---------- Szablony kadry meczowej ----------
-  defaultFormat() { return SPORT_FORMATS.find(([re]) => re.test(this.league?.sport ?? ""))?.[1] ?? "football11"; }
-  formatOf(id) { return this.templates.formats.find((f) => f.id === id); }
+  // ---------- Kadra meczowa ----------
+  /** Czy sezon dzieli kadrę na pierwszy skład i rezerwowych (organizator podał rozmiar składu). */
+  hasSquadSize() { return this.season?.teamSize != null; }
   strategyOf(id) { return this.templates.strategies.find((s) => s.id === id); }
 
-  setNotifications({ invitations = [], leagueInvitations = [], messages = [] }) {
-    Object.assign(this, { invitations, leagueInvitations, messages });
+  setNotifications({ invitations = [], leagueInvitations = [], teamInvitations = [], messages = [] }) {
+    Object.assign(this, { invitations, leagueInvitations, teamInvitations, messages });
+  }
+
+  notificationCount() {
+    return this.invitations.length + this.leagueInvitations.length + this.teamInvitations.length + this.messages.length;
   }
 }

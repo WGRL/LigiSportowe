@@ -1,7 +1,7 @@
 import { $ } from "../core/dom.js";
 import { Controller } from "./Controller.js";
 
-/** Okno powiadomień: odpowiedzi na zaproszenia do drużyn i lig oraz zamykanie powiadomień informacyjnych. */
+/** Okno powiadomień: odpowiedzi na zaproszenia do drużyn (poza ligą i w ligach) i lig oraz zamykanie powiadomień informacyjnych. */
 export class NotificationController extends Controller {
   handlers() {
     const { state, api, loader, notifier } = this;
@@ -27,6 +27,17 @@ export class NotificationController extends Controller {
         state.league = { id: leagueId };
         await loader.refreshSession();
         notifier.show(`Drużyna ${invitation?.team ?? ""} dołączyła do ligi ${invitation?.league ?? ""}.`, true);
+      },
+      "accept-team-invitation": async ({ id }) => {
+        const invitation = state.teamInvitations.find((i) => i.id === id);
+        await api(`/api/league-team-invitations/${id}/accept`, "POST");
+        state.league = { id: invitation?.leagueId ?? state.league?.id };
+        await loader.refreshSession();
+        notifier.show(`Dołączono do drużyny ${invitation?.team ?? ""} w lidze ${invitation?.league ?? ""}.`, true);
+      },
+      "reject-team-invitation": async ({ id }) => {
+        await api(`/api/league-team-invitations/${id}/reject`, "POST");
+        await loader.reload();
       },
       "reject-league-invitation": async ({ id }) => {
         await api(`/api/league-invitations/${id}/reject`, "POST");

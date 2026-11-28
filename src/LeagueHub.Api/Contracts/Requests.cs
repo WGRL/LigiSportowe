@@ -44,26 +44,29 @@ public record LeagueReq(string? Name, string? Sport, string? Description) : IVal
         ? null : "Nazwa (1–100 znaków) i dyscyplina (1–60) są wymagane, opis do 500 znaków.";
 }
 
-public record SeasonReq(string? Name, DateTime? StartsOn, DateTime? EndsOn, int PointsWin, int PointsDraw, int PointsLoss) : IValid
+/// <summary>TeamSize/BenchSize — opcjonalny rozmiar kadry meczowej (pierwszy skład / maks. rezerwowych); null = bez ograniczeń.</summary>
+public record SeasonReq(string? Name, DateTime? StartsOn, DateTime? EndsOn, int PointsWin, int PointsDraw, int PointsLoss,
+    int? TeamSize = null, int? BenchSize = null) : IValid
 {
     public string? Error() =>
         !Check.Len(Name, 1, 80) ? "Nazwa sezonu: 1–80 znaków."
         : StartsOn > EndsOn ? "Koniec sezonu nie może być przed początkiem."
         : PointsLoss < 0 || PointsDraw < PointsLoss || PointsWin < PointsDraw || PointsWin > 10
-            ? "Punkty: 0–10, zwycięstwo ≥ remis ≥ porażka." : null;
+            ? "Punkty: 0–10, zwycięstwo ≥ remis ≥ porażka."
+        : TeamSize is < 1 or > 50 ? "Liczba zawodników w składzie: 1–50."
+        : BenchSize is < 0 or > 50 ? "Liczba rezerwowych: 0–50."
+        : BenchSize is not null && TeamSize is null ? "Limit rezerwowych wymaga podania liczby zawodników w składzie." : null;
 }
 
 public record GameReq(long HomeTeamId, long AwayTeamId, DateTime StartsAt, string? Venue,
-    string? LineupFormat = null, string? LineupStrategy = null) : IValid
+    string? LineupStrategy = null) : IValid
 {
-    public string Format => LineupFormat ?? LineupTemplates.DefaultFormat;
     public string Strategy => LineupStrategy ?? LineupTemplates.DefaultStrategy;
 
     public string? Error() =>
         HomeTeamId <= 0 || AwayTeamId <= 0 || HomeTeamId == AwayTeamId ? "Wybierz dwie różne drużyny."
         : StartsAt == default ? "Podaj termin meczu."
         : !Check.Len(Venue, 0, 120) ? "Miejsce: do 120 znaków."
-        : LineupTemplates.Format(Format) is null ? "Nieznany format kadry meczowej."
         : LineupTemplates.Strategy(Strategy) is null ? "Nieznany sposób doboru zawodników." : null;
 }
 
@@ -72,9 +75,8 @@ public record GameReq(long HomeTeamId, long AwayTeamId, DateTime StartsAt, strin
 /// "keep" = zostaw je i dopisz brakujące pary, "replace" = usuń nierozegrane i ułóż je od nowa (rozegrane zostają zawsze).
 /// </summary>
 public record ScheduleReq(string? System, DateTime FirstGameAt, int RoundIntervalDays, int GameIntervalMinutes, string? Venue,
-    string? LineupFormat = null, string? LineupStrategy = null, string? Existing = null) : IValid
+    string? LineupStrategy = null, string? Existing = null) : IValid
 {
-    public string Format => LineupFormat ?? LineupTemplates.DefaultFormat;
     public string Strategy => LineupStrategy ?? LineupTemplates.DefaultStrategy;
 
     public string? Error() =>
@@ -85,7 +87,6 @@ public record ScheduleReq(string? System, DateTime FirstGameAt, int RoundInterva
         : RoundIntervalDays == 0 && GameIntervalMinutes == 0 ? "Turniej jednego dnia (0 dni między kolejkami) wymaga odstępu między meczami."
         : !Check.Len(Venue, 0, 120) ? "Miejsce: do 120 znaków."
         : Existing is not (null or "keep" or "replace") ? "Nieznana opcja dla istniejących meczów."
-        : LineupTemplates.Format(Format) is null ? "Nieznany format kadry meczowej."
         : LineupTemplates.Strategy(Strategy) is null ? "Nieznany sposób doboru zawodników." : null;
 }
 

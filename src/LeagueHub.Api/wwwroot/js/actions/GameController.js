@@ -36,15 +36,15 @@ export class GameController extends Controller {
     };
   }
 
+  // Sposób doboru ma znaczenie tylko, gdy sezon dzieli kadrę na skład i rezerwowych (rozmiar składu w parametrach sezonu).
   #lineupFields(g) {
     const { state } = this;
+    if (!state.hasSquadSize()) return [];
     return [
-      { name: "lineupFormat", label: "Format kadry meczowej", text: true, value: g.lineupFormat ?? state.defaultFormat(),
-        options: state.templates.formats.map((f) => [f.id, `${f.name} — ${f.starters} + ${f.substitutes} rez.`]) },
-      { name: "lineupStrategy", label: "Dobór zawodników", text: true, value: g.lineupStrategy ?? "rotation",
+      { name: "lineupStrategy", label: "Dobór zawodników do składu", text: true, value: g.lineupStrategy ?? "rotation",
         options: state.templates.strategies.map((s) => [s.id, s.name]),
         hint: state.templates.strategies.map((s) => `${s.name}: ${s.description}`).join(" ") +
-          " Kapitan zawsze wychodzi w pierwszym składzie." + (g.id ? " Zmiana drużyn, formatu lub doboru losuje kadry od nowa." : "") }
+          " Kapitan zawsze wychodzi w pierwszym składzie." + (g.id ? " Zmiana drużyn lub doboru losuje kadry od nowa." : "") }
     ];
   }
 

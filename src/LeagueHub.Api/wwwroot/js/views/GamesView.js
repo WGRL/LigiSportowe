@@ -38,27 +38,38 @@ export class GamesView extends View {
       : empty("✓", status === "preparation" ? "Wyniki można wpisywać po rozpoczęciu sezonu." : "Brak rozegranych spotkań.");
   }
 
+  // Z rozmiarem składu w sezonie: pierwszy skład i rezerwowi. Bez niego: jedna lista — cała drużyna.
+  // Starsze, rozegrane mecze mogą mieć rezerwowych mimo braku rozmiaru — wtedy też pokazujemy podział.
   #lineup(g) {
-    const { state } = this;
-    const format = state.formatOf(g.lineupFormat), strategy = state.strategyOf(g.lineupStrategy);
-    const canDraw = g.homeScore === null && state.season?.status !== "finished";
+    const { state } = this, { season } = state;
+    const teamSize = season?.teamSize ?? null, benchSize = season?.benchSize ?? null;
+    const strategy = state.strategyOf(g.lineupStrategy);
+    const canDraw = g.homeScore === null && season?.status !== "finished";
+    const noPlayers = '<li class="muted">Brak zawodników — dodaj ich do drużyny i wylosuj kadrę ponownie.</li>';
     const person = (p) => `<li><span title="Nazwa użytkownika: ${esc(p.username)}">${esc(p.displayName || p.username)}${p.isCaptain ? ' <span class="status-pill">Kapitan</span>' : ""}</span></li>`;
     const side = (teamId, name) => {
       const rows = state.lineup.filter((p) => p.teamId === teamId);
       const starters = rows.filter((p) => p.role === "starter"), subs = rows.filter((p) => p.role === "substitute");
-      const short = format && starters.length < format.starters;
-      return `<div class="lineup-side">
-        <div class="lineup-head"><strong>${esc(name)}</strong>
-          ${canDraw && state.canManageTeam(teamId) ? btn("draw-lineup", g.id, "Losuj ponownie", false, teamId) : ""}</div>
-        <p class="lineup-label">Pierwszy skład ${format ? `(${starters.length}/${format.starters})` : ""}
+      const split = teamSize !== null || subs.length > 0;
+      const short = teamSize !== null && starters.length < teamSize;
+      const head = `<div class="lineup-head"><strong>${esc(name)}</strong>
+          ${canDraw && state.canManageTeam(teamId) ? btn("draw-lineup", g.id, "Losuj ponownie", false, teamId) : ""}</div>`;
+      if (!split) return `<div class="lineup-side">${head}
+        <p class="lineup-label">Kadra meczowa (${rows.length})</p>
+        <ul class="roster">${rows.map(person).join("") || noPlayers}</ul></div>`;
+      return `<div class="lineup-side">${head}
+        <p class="lineup-label">Pierwszy skład ${teamSize !== null ? `(${starters.length}/${teamSize})` : ""}
           ${short ? '<span class="status-pill status-preparation">Niepełny skład</span>' : ""}</p>
-        <ul class="roster">${starters.map(person).join("") || '<li class="muted">Brak zawodników — dodaj ich do drużyny i wylosuj kadrę ponownie.</li>'}</ul>
-        ${subs.length ? `<p class="lineup-label">Rezerwowi (${subs.length}/${format?.substitutes ?? "?"})</p>
+        <ul class="roster">${starters.map(person).join("") || noPlayers}</ul>
+        ${subs.length ? `<p class="lineup-label">Rezerwowi (${subs.length}${benchSize !== null ? `/${benchSize}` : ""})</p>
           <ul class="roster">${subs.map(person).join("")}</ul>` : ""}
       </div>`;
     };
+    const meta = teamSize === null
+      ? "Kadra: cała drużyna (rozmiar składu można ustawić w parametrach sezonu)"
+      : `Skład: ${teamSize} + ${benchSize === null ? "rezerwowi" : `maks. ${benchSize} rez.`} · dobór: <span title="${esc(strategy?.description)}">${esc(strategy?.name ?? g.lineupStrategy)}</span>`;
     return `<div class="lineup">
-      <p class="muted lineup-meta">${esc(format?.name ?? g.lineupFormat)} · dobór: <span title="${esc(strategy?.description)}">${esc(strategy?.name ?? g.lineupStrategy)}</span>
+      <p class="muted lineup-meta">${meta}
         ${canDraw && state.isOrganizer() ? btn("draw-lineup", g.id, "Losuj obie kadry") : ""}</p>
       <div class="lineup-grid">${side(g.homeTeamId, g.homeTeam)}${side(g.awayTeamId, g.awayTeam)}</div>
     </div>`;

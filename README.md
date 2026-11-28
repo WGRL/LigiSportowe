@@ -31,6 +31,7 @@ Prosta aplikacja do prowadzenia amatorskich lig sportowych: ligi, sezony, druży
 ```text
 users ──< leagues (organizator) ──< seasons ──< games >── teams (gospodarz/gość)
                                 └─< teams ──< team_members >── users  (is_captain)
+                                           └─< league_team_invitations >── users  (oczekujące zaproszenia zawodników)
 games ──< game_lineups >── users   (kadra meczowa: pierwszy skład / rezerwowi)
 users ──< independent_teams (właściciel) ──< independent_team_members >── users
                                          ├─< team_invitations >── users   (oczekujące zaproszenia do drużyny)
@@ -76,6 +77,17 @@ metodą Bergera, jak w ligach piłkarskich (`Scheduling/RoundRobin.cs`, `POST /a
 - Działa też w trakcie sezonu. Jeśli sezon ma już mecze, organizator wybiera jedną z dwóch opcji:
   **zostaw i dopisz brakujące pary** (np. po dołączeniu nowej drużyny) albo **ułóż zaplanowane od nowa**.
   Rozegrane mecze zawsze zostają i liczą się jako odbyte pary. Nowe mecze dostają kolejne numery kolejek.
+
+## Zaproszenia zawodników do drużyn w lidze
+
+Kapitan albo organizator nie dodaje zawodnika do drużyny ligowej bezpośrednio. Klika **„Zaproś zawodnika”** i wpisuje nazwę użytkownika
+(`POST /api/teams/{id}/invitations`).
+
+- Zaproszony dostaje zaproszenie w powiadomieniach i może je **zaakceptować** albo **odrzucić**. Do składu trafia dopiero po akceptacji.
+  Zapraszający dostaje powiadomienie o odpowiedzi.
+- Kapitan i organizator widzą oczekujące zaproszenia w składzie drużyny i mogą je wycofać.
+- Nie można zaprosić kogoś, kto gra już w tej albo innej drużynie tej ligi. Przy akceptacji zasada jest sprawdzana ponownie,
+  bo zawodnik mógł w międzyczasie przyjąć zaproszenie do innej drużyny tej ligi.
 
 ## Drużyny poza ligą i zaproszenia
 
@@ -136,7 +148,7 @@ Po wpisaniu wyniku kadra zostaje w historii bez zmian.
 |---|---|
 | Gość | przeglądać ligi, sezony, drużyny, terminarz, wyniki i tabelę |
 | Zawodnik | j.w. + widzieć składy i swoje drużyny |
-| Kapitan | j.w. + zmieniać nazwę drużyny, dodawać/usuwać zawodników, losować ponownie kadrę meczową swojej drużyny |
+| Kapitan | j.w. + zmieniać nazwę drużyny, zapraszać (za ich zgodą) i usuwać zawodników, losować ponownie kadrę meczową swojej drużyny |
 | Właściciel drużyny poza ligą | zapraszać zawodników, wycofywać zaproszenia, usuwać zawodników, zmieniać nazwę i usuwać drużynę |
 | Organizator (twórca ligi) | wszystko w swojej lidze: edycja ligi, sezony i ich stan, drużyny (dodawanie, zapraszanie spoza ligi, usuwanie), kapitanowie, terminarz, wyniki |
 

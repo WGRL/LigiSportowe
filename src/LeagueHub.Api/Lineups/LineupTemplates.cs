@@ -1,25 +1,16 @@
 namespace LeagueHub.Api.Lineups;
 
-/// <summary>Format kadry meczowej: ilu zawodników zaczyna mecz i ilu może siedzieć na ławce (wg typowych przepisów).</summary>
-public sealed record LineupFormat(string Id, string Name, int Starters, int Substitutes);
+/// <summary>
+/// Rozmiar kadry meczowej z ustawień sezonu. Starters = null → bez podziału: w kadrze jest cała drużyna.
+/// Substitutes = null → na ławce siadają wszyscy pozostali zawodnicy.
+/// </summary>
+public sealed record SquadSize(int? Starters, int? Substitutes);
 
 /// <summary>Sposób wyboru zawodników do kadry spośród składu drużyny.</summary>
 public sealed record LineupStrategy(string Id, string Name, string Description);
 
 public static class LineupTemplates
 {
-    public static readonly IReadOnlyList<LineupFormat> Formats =
-    [
-        new("football11", "Piłka nożna 11-osobowa", 11, 7),
-        new("football7", "Piłka nożna 7-osobowa (orlik)", 7, 5),
-        new("futsal", "Futsal / piłka halowa", 5, 9),
-        new("basketball", "Koszykówka 5×5", 5, 7),
-        new("basketball3x3", "Koszykówka 3×3", 3, 1),
-        new("volleyball", "Siatkówka", 6, 8),
-        new("handball", "Piłka ręczna", 7, 9),
-        new("hockey", "Hokej na lodzie", 6, 14)
-    ];
-
     public static readonly IReadOnlyList<LineupStrategy> Strategies =
     [
         new("rotation", "Rotacja", "Najpierw grają ci, którzy w tym sezonie najrzadziej wychodzili w pierwszym składzie — równe szanse gry."),
@@ -28,10 +19,8 @@ public static class LineupTemplates
         new("random", "Losowanie", "Kadra losowana spośród wszystkich zawodników drużyny.")
     ];
 
-    public const string DefaultFormat = "football11";
     public const string DefaultStrategy = "rotation";
 
-    public static LineupFormat? Format(string? id) => Formats.FirstOrDefault(f => f.Id == id);
     public static LineupStrategy? Strategy(string? id) => Strategies.FirstOrDefault(s => s.Id == id);
 }
 
@@ -54,7 +43,7 @@ public static class LineupSelector
     /// Przy remisach w kryterium decyduje losowanie, więc ponowne losowanie daje szansę innym.
     /// </summary>
     public static IReadOnlyList<LineupPick> Select(
-        IEnumerable<SquadCandidate> candidates, LineupFormat format, LineupStrategy strategy, Random random)
+        IEnumerable<SquadCandidate> candidates, SquadSize size, LineupStrategy strategy, Random random)
     {
         var shuffled = candidates.Select(c => (Candidate: c, Tiebreak: random.Next())).ToList();
         IOrderedEnumerable<(SquadCandidate Candidate, int Tiebreak)> ordered = strategy.Id switch
@@ -74,8 +63,10 @@ public static class LineupSelector
             squad.Insert(0, c);
         }
 
-        return squad.Take(format.Starters + format.Substitutes)
-            .Select((c, i) => new LineupPick(c.UserId, i < format.Starters, i + 1))
+        if (size.Starters is not { } starters)
+            return squad.Select((c, i) => new LineupPick(c.UserId, true, i + 1)).ToList();
+        return squad.Take(starters + (size.Substitutes ?? squad.Count))
+            .Select((c, i) => new LineupPick(c.UserId, i < starters, i + 1))
             .ToList();
     }
 }

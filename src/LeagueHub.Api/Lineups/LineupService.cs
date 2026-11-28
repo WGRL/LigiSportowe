@@ -11,11 +11,13 @@ public static class LineupService
     /// </summary>
     public static async Task Draw(IDbConnection db, IDbTransaction tx, long gameId, long? teamId = null, string? strategyOverride = null)
     {
-        var game = await db.QuerySingleAsync<(long SeasonId, long HomeTeamId, long AwayTeamId, string Format, string Strategy)>("""
-            SELECT season_id, home_team_id, away_team_id, lineup_format, lineup_strategy FROM games WHERE id = @gameId FOR UPDATE
+        var game = await db.QuerySingleAsync<(long SeasonId, long HomeTeamId, long AwayTeamId, string Strategy, long? TeamSize, long? BenchSize)>("""
+            SELECT g.season_id, g.home_team_id, g.away_team_id, g.lineup_strategy,
+                   CAST(s.team_size AS SIGNED), CAST(s.bench_size AS SIGNED)
+            FROM games g JOIN seasons s ON s.id = g.season_id WHERE g.id = @gameId FOR UPDATE
             """, new { gameId }, tx);
 
-        var format = LineupTemplates.Format(game.Format) ?? LineupTemplates.Format(LineupTemplates.DefaultFormat)!;
+        var size = new SquadSize((int?)game.TeamSize, (int?)game.BenchSize);
         var strategy = LineupTemplates.Strategy(strategyOverride ?? game.Strategy) ?? LineupTemplates.Strategy(LineupTemplates.DefaultStrategy)!;
 
         await db.ExecuteAsync(
@@ -35,7 +37,7 @@ public static class LineupService
                 GROUP BY m.user_id, m.is_captain, m.joined_at
                 """, new { seasonId = game.SeasonId, gameId, team }, tx);
 
-            var picks = LineupSelector.Select(candidates, format, strategy, Random.Shared);
+            var picks = LineupSelector.Select(candidates, size, strategy, Random.Shared);
             await db.ExecuteAsync(
                 "INSERT INTO game_lineups (game_id, team_id, user_id, role, slot) VALUES (@gameId, @team, @UserId, @Role, @Slot)",
                 picks.Select(p => new { gameId, team, p.UserId, Role = p.Starter ? "starter" : "substitute", p.Slot }), tx);

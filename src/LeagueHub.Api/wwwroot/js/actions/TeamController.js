@@ -14,9 +14,17 @@ export class TeamController extends Controller {
         state.openTeam = state.openTeam === id ? null : id;
         return loader.loadPlayers();
       },
-      "add-player": ({ id }) => forms.open(`Dodaj zawodnika — ${state.team(id).name}`,
-        [{ name: "username", label: "Nazwa użytkownika (konto musi istnieć)", required: true, maxLength: 32 }],
-        (d) => api(`/api/teams/${id}/players`, "POST", d)),
+      "add-player": ({ id }) => forms.open(`Zaproś zawodnika — ${state.team(id).name}`,
+        [{ name: "username", label: "Nazwa użytkownika", required: true, maxLength: 32,
+           hint: "Zawodnik dostanie zaproszenie w powiadomieniach i trafi do składu dopiero po akceptacji." }],
+        async (d) => {
+          await api(`/api/teams/${id}/invitations`, "POST", d);
+          notifier.show(`Wysłano zaproszenie do ${d.username}.`, true);
+        }),
+      "cancel-team-invitation": async ({ id, user }) => {
+        await api(`/api/teams/${id}/invitations/${user}`, "DELETE");
+        await loader.loadPlayers();
+      },
       "remove-player": async ({ id, user }) => {
         if (!confirm("Usunąć zawodnika z drużyny?")) return;
         await api(`/api/teams/${id}/players/${user}`, "DELETE");

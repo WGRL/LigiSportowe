@@ -1,4 +1,3 @@
-using System.Data;
 using System.Security.Claims;
 using Dapper;
 using LeagueHub.Api.Contracts;
@@ -90,9 +89,9 @@ public static class LeagueInvitationEndpoints
                 FROM independent_team_members m WHERE m.team_id = @TeamId
                 """, new { leagueTeamId, invitation.LeagueId, invitation.TeamId, uid = principal.Uid() }, transaction);
             await connection.ExecuteAsync("DELETE FROM league_invitations WHERE id = @id", new { id }, transaction);
-            await Notify(connection, transaction, "SELECT @organizer", new { organizer = invitation.OrganizerId },
+            await Notifications.Send(connection, transaction, "SELECT @organizer", new { organizer = invitation.OrganizerId },
                 $"Drużyna {invitation.Team} przyjęła zaproszenie do ligi {invitation.League}.");
-            await Notify(connection, transaction,
+            await Notifications.Send(connection, transaction,
                 "SELECT user_id FROM independent_team_members WHERE team_id = @TeamId AND user_id <> @uid", target,
                 $"Twoja drużyna {invitation.Team} dołączyła do ligi {invitation.League}.");
             await transaction.CommitAsync();
@@ -114,7 +113,7 @@ public static class LeagueInvitationEndpoints
             if (invitation == default)
                 return SecurityExtensions.NotAllowed("Zaproszenie nie istnieje lub zostało wycofane.");
             await connection.ExecuteAsync("DELETE FROM league_invitations WHERE id = @id", new { id }, transaction);
-            await Notify(connection, transaction, "SELECT @organizer", new { organizer = invitation.OrganizerId },
+            await Notifications.Send(connection, transaction, "SELECT @organizer", new { organizer = invitation.OrganizerId },
                 $"Drużyna {invitation.Team} odrzuciła zaproszenie do ligi {invitation.League}.");
             await transaction.CommitAsync();
             return Results.NoContent();
@@ -135,7 +134,7 @@ public static class LeagueInvitationEndpoints
             const string teamGames = "(home_team_id = @id OR away_team_id = @id)";
             if (await connection.ExecuteScalarAsync<int>($"SELECT COUNT(*) FROM games WHERE {teamGames} AND home_score IS NOT NULL", new { id }, transaction) > 0)
                 return Results.Conflict(new { message = "Drużyna ma rozegrane mecze — usunięcie zmieniłoby historię tabeli, więc nie można jej usunąć z ligi." });
-            await Notify(connection, transaction, "SELECT user_id FROM team_members WHERE team_id = @id", new { id },
+            await Notifications.Send(connection, transaction, "SELECT user_id FROM team_members WHERE team_id = @id", new { id },
                 $"Drużyna {team.Team} została usunięta z ligi {team.League}.");
             await connection.ExecuteAsync($"DELETE FROM games WHERE {teamGames}", new { id }, transaction);
             await connection.ExecuteAsync("DELETE FROM teams WHERE id = @id", new { id }, transaction);
@@ -163,9 +162,17 @@ public static class LeagueInvitationEndpoints
                 JOIN users u ON u.id = i.invited_by
                 WHERE t.owner_id = @uid ORDER BY i.created_at DESC
                 """, uid);
+            var teamInvitations = await connection.QueryAsync("""
+                SELECT i.id, t.name AS team, l.name AS league, l.id AS leagueId, u.display_name AS invitedBy, i.created_at AS createdAt
+                FROM league_team_invitations i
+                JOIN teams t ON t.id = i.team_id
+                JOIN leagues l ON l.id = i.league_id
+                JOIN users u ON u.id = i.invited_by
+                WHERE i.user_id = @uid ORDER BY i.created_at DESC
+                """, uid);
             var messages = await connection.QueryAsync(
                 "SELECT id, message, created_at AS createdAt FROM notifications WHERE user_id = @uid ORDER BY created_at DESC, id DESC LIMIT 50", uid);
-            return Results.Ok(new { invitations, leagueInvitations, messages });
+            return Results.Ok(new { invitations, leagueInvitations, teamInvitations, messages });
         });
 
         user.MapDelete("/notifications/{id:long}", (long id, ClaimsPrincipal principal, DbExecutor db) => db.Exec(
@@ -177,13 +184,5 @@ public static class LeagueInvitationEndpoints
             await connection.ExecuteAsync("DELETE FROM notifications WHERE user_id = @uid", new { uid = principal.Uid() });
             return Results.NoContent();
         });
-    }
-
-    /// <summary>Wysyła powiadomienie każdemu użytkownikowi zwróconemu przez <paramref name="recipients"/> (zapytanie z jedną kolumną).</summary>
-    private static Task Notify(IDbConnection connection, IDbTransaction transaction, string recipients, object parameters, string message)
-    {
-        var all = new DynamicParameters(parameters);
-        all.Add("message", message.Length > 300 ? message[..300] : message);
-        return connection.ExecuteAsync($"INSERT INTO notifications (user_id, message) SELECT r.*, @message FROM ({recipients}) r", all, transaction);
     }
 }

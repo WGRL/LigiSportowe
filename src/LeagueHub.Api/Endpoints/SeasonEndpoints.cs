@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using Dapper;
+using LeagueHub.Api.Lineups;
 using LeagueHub.Api.Contracts;
 using LeagueHub.Api.Infrastructure;
 
@@ -10,22 +12,43 @@ public static class SeasonEndpoints
     {
         api.MapGet("/leagues/{id:long}/seasons", (long id, DbExecutor db) => db.Query("""
             SELECT id, name, starts_on AS startsOn, ends_on AS endsOn, points_win AS pointsWin,
-                   points_draw AS pointsDraw, points_loss AS pointsLoss, status
+                   points_draw AS pointsDraw, points_loss AS pointsLoss, status,
+                   team_size AS teamSize, bench_size AS benchSize
             FROM seasons WHERE league_id = @id ORDER BY id DESC
             """, new { id }));
 
         user.MapPost("/leagues/{id:long}/seasons", (long id, SeasonReq request, ClaimsPrincipal principal, DbExecutor db) => db.Insert("""
-            INSERT INTO seasons (league_id, name, starts_on, ends_on, points_win, points_draw, points_loss)
-            SELECT id, TRIM(@Name), @StartsOn, @EndsOn, @PointsWin, @PointsDraw, @PointsLoss
+            INSERT INTO seasons (league_id, name, starts_on, ends_on, points_win, points_draw, points_loss, team_size, bench_size)
+            SELECT id, TRIM(@Name), @StartsOn, @EndsOn, @PointsWin, @PointsDraw, @PointsLoss, @TeamSize, @BenchSize
             FROM leagues WHERE id = @id AND organizer_id = @uid
             """, DbExecutor.Params(request, principal, id)));
 
-        user.MapPut("/seasons/{id:long}", (long id, SeasonReq request, ClaimsPrincipal principal, DbExecutor db) => db.Exec("""
-            UPDATE seasons s JOIN leagues l ON l.id = s.league_id
-            SET s.name = TRIM(@Name), s.starts_on = @StartsOn, s.ends_on = @EndsOn,
-                s.points_win = @PointsWin, s.points_draw = @PointsDraw, s.points_loss = @PointsLoss
-            WHERE s.id = @id AND l.organizer_id = @uid AND s.status = 'preparation'
-            """, DbExecutor.Params(request, principal, id)));
+        // Zmiana rozmiaru kadry losuje od nowa kadry wszystkich zaplanowanych meczów sezonu (chronologicznie, dla rotacji).
+        user.MapPut("/seasons/{id:long}", async (long id, SeasonReq request, ClaimsPrincipal principal, DbExecutor db) =>
+        {
+            var parameters = DbExecutor.Params(request, principal, id);
+            await using var connection = db.CreateConnection();
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            var before = (await connection.QueryAsync<(long? TeamSize, long? BenchSize)>("""
+                SELECT CAST(s.team_size AS SIGNED), CAST(s.bench_size AS SIGNED) FROM seasons s JOIN leagues l ON l.id = s.league_id
+                WHERE s.id = @id AND l.organizer_id = @uid AND s.status = 'preparation' FOR UPDATE
+                """, parameters, transaction)).ToList();
+            if (before.Count == 0) return SecurityExtensions.NotAllowed();
+            await connection.ExecuteAsync("""
+                UPDATE seasons
+                SET name = TRIM(@Name), starts_on = @StartsOn, ends_on = @EndsOn,
+                    points_win = @PointsWin, points_draw = @PointsDraw, points_loss = @PointsLoss,
+                    team_size = @TeamSize, bench_size = @BenchSize
+                WHERE id = @id
+                """, parameters, transaction);
+            if (before[0] != (request.TeamSize, request.BenchSize))
+                foreach (var gameId in await connection.QueryAsync<long>(
+                             "SELECT id FROM games WHERE season_id = @id AND home_score IS NULL ORDER BY starts_at, id", parameters, transaction))
+                    await LineupService.Draw(connection, transaction, gameId);
+            await transaction.CommitAsync();
+            return Results.NoContent();
+        });
 
         user.MapPost("/seasons/{id:long}/advance", (long id, ClaimsPrincipal principal, DbExecutor db) => db.Exec("""
             UPDATE seasons s JOIN leagues l ON l.id = s.league_id

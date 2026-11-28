@@ -16,6 +16,8 @@ export class LeagueView extends View {
       return;
     }
     const dates = season && (season.startsOn || season.endsOn) ? `${day(season.startsOn)} – ${day(season.endsOn)}` : "termin nieustalony";
+    const squad = season?.teamSize == null ? "skład: cała drużyna"
+      : `skład: ${season.teamSize} + ${season.benchSize == null ? "rezerwowi" : `maks. ${season.benchSize} rez.`}`;
     $("#league-info").innerHTML = `
       ${league.description ? `<p class="muted">${esc(league.description)}</p>` : ""}
       <p class="muted">Organizator: <strong>${esc(league.organizer)}</strong></p>
@@ -26,7 +28,7 @@ export class LeagueView extends View {
         </label>
         <div class="toolbar">
           <span class="status-pill status-${esc(season.status)}">${STATUS[season.status]}</span>
-          <small class="muted">${dates} · punkty Z/R/P: ${season.pointsWin}/${season.pointsDraw}/${season.pointsLoss}</small>
+          <small class="muted">${dates} · punkty Z/R/P: ${season.pointsWin}/${season.pointsDraw}/${season.pointsLoss} · ${squad}</small>
         </div>` : `<p class="muted">Liga nie ma jeszcze sezonu.</p>`}
       ${state.isOrganizer() ? `<div class="toolbar">
         ${btn("new-season", "", "Nowy sezon")}

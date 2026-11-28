@@ -11,7 +11,7 @@ export class DataLoader {
 
   async refreshSession() {
     const { api, state } = this;
-    if (!state.templates.formats.length) state.templates = await api("/api/lineup-templates");
+    if (!state.templates.strategies.length) state.templates = await api("/api/lineup-templates");
     const me = await api("/api/auth/me");
     state.user = me.authenticated ? me : null;
     await this.loadMine();
@@ -62,8 +62,9 @@ export class DataLoader {
   async loadPlayers() {
     const { api, state } = this;
     if (state.openGame && !state.game(state.openGame)) state.openGame = null;
-    [state.players, state.lineup] = await Promise.all([
+    [state.players, state.teamPending, state.lineup] = await Promise.all([
       state.openTeam && state.user ? api(`/api/teams/${state.openTeam}/players`) : [],
+      state.openTeam && state.user && state.canManageTeam(state.openTeam) ? api(`/api/teams/${state.openTeam}/invitations`) : [],
       state.openGame && state.user ? api(`/api/games/${state.openGame}/lineup`) : []
     ]);
     this.view.render();

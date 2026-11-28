@@ -44,10 +44,14 @@ CREATE TABLE seasons (
     points_draw TINYINT UNSIGNED NOT NULL DEFAULT 1,
     points_loss TINYINT UNSIGNED NOT NULL DEFAULT 0,
     status      ENUM ('preparation', 'ongoing', 'finished') NOT NULL DEFAULT 'preparation',
+    team_size   TINYINT UNSIGNED NULL,                         -- zawodników w pierwszym składzie; NULL = bez podziału, w kadrze cała drużyna
+    bench_size  TINYINT UNSIGNED NULL,                         -- maks. rezerwowych; NULL = wszyscy pozostali
     UNIQUE KEY uq_seasons_league_name (league_id, name),
     UNIQUE KEY uq_seasons_id_league (id, league_id),          -- cel złożonego FK z games
     CONSTRAINT chk_seasons_dates  CHECK (starts_on IS NULL OR ends_on IS NULL OR ends_on >= starts_on),
     CONSTRAINT chk_seasons_points CHECK (points_win >= points_draw AND points_draw >= points_loss),
+    CONSTRAINT chk_seasons_squad  CHECK ((team_size IS NULL OR team_size BETWEEN 1 AND 50)
+                                         AND (bench_size IS NULL OR (team_size IS NOT NULL AND bench_size <= 50))),
     CONSTRAINT fk_seasons_league FOREIGN KEY (league_id) REFERENCES leagues (id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
@@ -88,8 +92,7 @@ CREATE TABLE games (
     home_score   SMALLINT UNSIGNED NULL,                       -- NULL = mecz nierozegrany
     away_score   SMALLINT UNSIGNED NULL,
     round_no     SMALLINT UNSIGNED NULL,                       -- numer kolejki (terminarz generowany); NULL = mecz dodany ręcznie
-    lineup_format   VARCHAR(20)    NOT NULL DEFAULT 'football11', -- szablon kadry (Lineups/LineupTemplates.cs)
-    lineup_strategy VARCHAR(20)    NOT NULL DEFAULT 'rotation',   -- sposób doboru zawodników
+    lineup_strategy VARCHAR(20)    NOT NULL DEFAULT 'rotation',   -- sposób doboru zawodników (rozmiar kadry: seasons.team_size)
     KEY ix_games_season_starts (season_id, starts_at),
     CONSTRAINT chk_games_teams CHECK (home_team_id <> away_team_id),
     CONSTRAINT chk_games_score CHECK ((home_score IS NULL) = (away_score IS NULL)),
@@ -173,4 +176,20 @@ CREATE TABLE notifications (
     created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY ix_notifications_user (user_id, created_at),
     CONSTRAINT fk_notifications_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Zaproszenie zawodnika do drużyny w lidze: wysyła kapitan albo organizator, zawodnik przyjmuje je albo odrzuca.
+-- Dopiero po przyjęciu zawodnik trafia do team_members (wtedy też obowiązuje zasada „jedna drużyna na ligę”).
+CREATE TABLE league_team_invitations (
+    id         BIGINT   NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    team_id    BIGINT   NOT NULL,
+    league_id  BIGINT   NOT NULL,
+    user_id    BIGINT   NOT NULL,                              -- zaproszony
+    invited_by BIGINT   NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_team_invitations_team_user (team_id, user_id),
+    KEY ix_team_invitations_user (user_id),
+    CONSTRAINT fk_team_invitations_team    FOREIGN KEY (team_id, league_id) REFERENCES teams (id, league_id) ON DELETE CASCADE,
+    CONSTRAINT fk_team_invitations_user    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+    CONSTRAINT fk_team_invitations_inviter FOREIGN KEY (invited_by) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB;

@@ -49,7 +49,11 @@ export class LeagueController extends Controller {
       { name: "endsOn", label: "Koniec", type: "date", value: s.endsOn?.slice(0, 10) },
       { name: "pointsWin", label: "Punkty za zwycięstwo", type: "number", min: 0, max: 10, required: true, value: s.pointsWin },
       { name: "pointsDraw", label: "Punkty za remis", type: "number", min: 0, max: 10, required: true, value: s.pointsDraw },
-      { name: "pointsLoss", label: "Punkty za porażkę", type: "number", min: 0, max: 10, required: true, value: s.pointsLoss }
+      { name: "pointsLoss", label: "Punkty za porażkę", type: "number", min: 0, max: 10, required: true, value: s.pointsLoss },
+      { name: "teamSize", label: "Zawodników w składzie meczowym (opcjonalnie)", type: "number", min: 1, max: 50, value: s.teamSize,
+        hint: "Ilu zawodników drużyny zaczyna mecz, np. 5, 6, 11. Puste = bez podziału: do kadry meczu trafia cała drużyna." },
+      { name: "benchSize", label: "Maks. rezerwowych (opcjonalnie)", type: "number", min: 0, max: 50, value: s.benchSize,
+        hint: "Działa tylko z liczbą zawodników w składzie. Puste = na ławce wszyscy pozostali." }
     ], save);
   }
 }

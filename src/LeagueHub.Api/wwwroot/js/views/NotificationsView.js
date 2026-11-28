@@ -6,8 +6,8 @@ import { View } from "./View.js";
 /** Licznik na przycisku z dzwonkiem i lista w oknie powiadomień. */
 export class NotificationsView extends View {
   render() {
-    const { invitations, leagueInvitations, messages } = this.state;
-    const count = invitations.length + leagueInvitations.length + messages.length;
+    const { invitations, leagueInvitations, teamInvitations, messages } = this.state;
+    const count = this.state.notificationCount();
     $("#notifications-badge").textContent = count > 9 ? "9+" : count;
     $("#notifications-badge").hidden = !count;
     $("#notifications-button").setAttribute("aria-label", count ? `Powiadomienia: ${count} nowe` : "Powiadomienia");
@@ -17,7 +17,10 @@ export class NotificationsView extends View {
         <span><strong>${title}</strong><small>${text} · ${formatDate(at)}</small></span>
         <span class="toolbar">${actions}</span></div>`;
     $("#notifications-list").innerHTML = count
-      ? section("Zaproszenia do drużyn", invitations.map((i) => item(esc(i.team), `${esc(i.invitedBy)} zaprasza Cię do drużyny`, i.createdAt,
+      ? section("Zaproszenia do drużyn w ligach", teamInvitations.map((i) => item(esc(i.team),
+          `${esc(i.invitedBy)} zaprasza Cię do drużyny w lidze <strong>${esc(i.league)}</strong>`, i.createdAt,
+          btn("accept-team-invitation", i.id, "Akceptuj", true) + btn("reject-team-invitation", i.id, "Odrzuć")))) +
+        section("Zaproszenia do drużyn", invitations.map((i) => item(esc(i.team), `${esc(i.invitedBy)} zaprasza Cię do drużyny`, i.createdAt,
           btn("accept-invitation", i.id, "Akceptuj", true) + btn("reject-invitation", i.id, "Odrzuć")))) +
         section("Zaproszenia do lig", leagueInvitations.map((i) => item(esc(i.league),
           `${esc(i.invitedBy)} zaprasza Twoją drużynę <strong>${esc(i.team)}</strong> do ligi (${esc(i.sport)})`, i.createdAt,

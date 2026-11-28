@@ -1,6 +1,6 @@
 import { $, esc } from "../core/dom.js";
 import { formatDate } from "../core/format.js";
-import { btn, empty } from "./components.js";
+import { btn, empty, personName } from "./components.js";
 import { View } from "./View.js";
 
 /** Drużyny wybranej ligi, rozwijany skład i (dla organizatora) oczekujące zaproszenia drużyn spoza ligi. */
@@ -32,14 +32,18 @@ export class TeamsView extends View {
   }
 
   #roster(teamId, org, manage) {
-    const rows = this.state.players.map((p) => `<li>
+    const { players, teamPending } = this.state;
+    const pending = manage ? teamPending.map((p) => `<li>
+        <span>${personName(p)} <span class="status-pill status-preparation">Zaproszony</span></span>
+        <span class="toolbar">${btn("cancel-team-invitation", teamId, "Wycofaj", false, p.id)}</span></li>`).join("") : "";
+    const rows = players.map((p) => `<li>
         <span title="Nazwa użytkownika: ${esc(p.username)}">${esc(p.displayName || p.username)}${p.isCaptain ? ' <span class="status-pill">Kapitan</span>' : ""}</span>
         <span class="toolbar">
           ${org && !p.isCaptain ? btn("make-captain", teamId, "Ustaw kapitanem", false, p.id) : ""}
           ${manage ? btn("remove-player", teamId, "Usuń", false, p.id) : ""}
         </span></li>`).join("");
-    return `<ul class="roster">${rows || '<li class="muted">Brak zawodników.</li>'}</ul>
-      ${manage ? `<div class="toolbar roster-actions">${btn("add-player", teamId, "Dodaj zawodnika", true)}</div>` : ""}`;
+    return `<ul class="roster">${rows || '<li class="muted">Brak zawodników.</li>'}${pending}</ul>
+      ${manage ? `<div class="toolbar roster-actions">${btn("add-player", teamId, "Zaproś zawodnika", true)}</div>` : ""}`;
   }
 
   #pendingInvitations() {

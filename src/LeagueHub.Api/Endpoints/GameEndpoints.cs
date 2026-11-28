@@ -13,13 +13,13 @@ public static class GameEndpoints
     {
         api.MapGet("/lineup-templates", () => Results.Ok(new
         {
-            formats = LineupTemplates.Formats, strategies = LineupTemplates.Strategies, scheduleSystems = RoundRobin.Systems
+            strategies = LineupTemplates.Strategies, scheduleSystems = RoundRobin.Systems
         }));
 
         api.MapGet("/seasons/{id:long}/games", (long id, DbExecutor db) => db.Query("""
             SELECT g.id, g.starts_at AS startsAt, g.venue, g.home_team_id AS homeTeamId, h.name AS homeTeam,
                    g.away_team_id AS awayTeamId, a.name AS awayTeam, g.home_score AS homeScore, g.away_score AS awayScore,
-                   g.round_no AS round, g.lineup_format AS lineupFormat, g.lineup_strategy AS lineupStrategy
+                   g.round_no AS round, g.lineup_strategy AS lineupStrategy
             FROM games g JOIN teams h ON h.id = g.home_team_id JOIN teams a ON a.id = g.away_team_id
             WHERE g.season_id = @id ORDER BY g.starts_at, g.id
             """, new { id }));
@@ -62,13 +62,13 @@ public static class GameEndpoints
                 foreach (var fixture in round)
                 {
                     var gameId = await connection.ExecuteScalarAsync<long>("""
-                        INSERT INTO games (season_id, league_id, home_team_id, away_team_id, starts_at, venue, round_no, lineup_format, lineup_strategy)
-                        VALUES (@id, @leagueId, @home, @away, @startsAt, NULLIF(TRIM(@venue), ''), @round, @format, @strategy);
+                        INSERT INTO games (season_id, league_id, home_team_id, away_team_id, starts_at, venue, round_no, lineup_strategy)
+                        VALUES (@id, @leagueId, @home, @away, @startsAt, NULLIF(TRIM(@venue), ''), @round, @strategy);
                         SELECT LAST_INSERT_ID();
                         """, new
                     {
                         id, leagueId, home = fixture.HomeTeamId, away = fixture.AwayTeamId, startsAt, venue = request.Venue,
-                        round = fixture.Round, format = request.Format, strategy = request.Strategy
+                        round = fixture.Round, strategy = request.Strategy
                     }, transaction);
                     await LineupService.Draw(connection, transaction, gameId);
                     startsAt = startsAt.AddMinutes(request.GameIntervalMinutes);
@@ -88,8 +88,8 @@ public static class GameEndpoints
             await connection.OpenAsync();
             await using var transaction = await connection.BeginTransactionAsync();
             if (await connection.ExecuteAsync("""
-                INSERT INTO games (season_id, league_id, home_team_id, away_team_id, starts_at, venue, lineup_format, lineup_strategy)
-                SELECT s.id, s.league_id, @HomeTeamId, @AwayTeamId, @StartsAt, NULLIF(TRIM(@Venue), ''), @Format, @Strategy
+                INSERT INTO games (season_id, league_id, home_team_id, away_team_id, starts_at, venue, lineup_strategy)
+                SELECT s.id, s.league_id, @HomeTeamId, @AwayTeamId, @StartsAt, NULLIF(TRIM(@Venue), ''), @Strategy
                 FROM seasons s JOIN leagues l ON l.id = s.league_id
                 WHERE s.id = @id AND l.organizer_id = @uid AND s.status <> 'finished'
                 """, DbExecutor.Params(request, principal, id), transaction) == 0)
@@ -100,23 +100,23 @@ public static class GameEndpoints
             return Results.Ok(new { id = gameId });
         });
 
-        // Zmiana drużyn, formatu lub sposobu doboru → kadra dobierana od nowa.
+        // Zmiana drużyn lub sposobu doboru → kadra dobierana od nowa.
         user.MapPut("/games/{id:long}", async (long id, GameReq request, ClaimsPrincipal principal, DbExecutor db) =>
         {
             await using var connection = db.CreateConnection();
             await connection.OpenAsync();
             await using var transaction = await connection.BeginTransactionAsync();
-            var before = (await connection.QueryAsync<(long Home, long Away, string Format, string Strategy)>(
-                "SELECT home_team_id, away_team_id, lineup_format, lineup_strategy FROM games WHERE id = @id FOR UPDATE",
+            var before = (await connection.QueryAsync<(long Home, long Away, string Strategy)>(
+                "SELECT home_team_id, away_team_id, lineup_strategy FROM games WHERE id = @id FOR UPDATE",
                 new { id }, transaction)).ToList();
             if (before.Count == 0 || await connection.ExecuteAsync($"""
                 UPDATE games g {SqlFragments.GameAccess}
                 SET g.home_team_id = @HomeTeamId, g.away_team_id = @AwayTeamId, g.starts_at = @StartsAt, g.venue = NULLIF(TRIM(@Venue), ''),
-                    g.lineup_format = @Format, g.lineup_strategy = @Strategy
+                    g.lineup_strategy = @Strategy
                 WHERE g.id = @id AND l.organizer_id = @uid AND s.status <> 'finished' AND g.home_score IS NULL
                 """, DbExecutor.Params(request, principal, id), transaction) == 0)
                 return SecurityExtensions.NotAllowed();
-            if (before[0] !=(request.HomeTeamId, request.AwayTeamId, request.Format, request.Strategy))
+            if (before[0] != (request.HomeTeamId, request.AwayTeamId, request.Strategy))
                 await LineupService.Draw(connection, transaction, id);
             await transaction.CommitAsync();
             return Results.NoContent();
