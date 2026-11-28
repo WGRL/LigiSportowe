@@ -44,6 +44,22 @@ users ──< notifications   (powiadomienia informacyjne)
 - Baza wymusza spójność: obie drużyny meczu należą do ligi sezonu (złożone FK), zawodnik gra w jednej drużynie na ligę,
   drużyna ma maks. jednego kapitana i jest on jej zawodnikiem, mecz jest rozegrany ⇔ ma oba wyniki.
 
+## Frontend (`src/LeagueHub.Api/wwwroot/js`)
+
+Natywne moduły ES, bez frameworków i bez kroku budowania. Punkt wejścia to `main.js`, który tworzy obiekty i łączy je ze sobą.
+
+```text
+core/      ApiClient (fetch + błędy), dom ($, esc), format (daty), constants
+state/     AppState — cały stan aplikacji i zapytania o niego (uprawnienia, wyszukiwanie)
+services/  DataLoader (API → stan → widok), NotificationPoller (powiadomienia co 30 s)
+views/     widok na każdy panel (View → HeaderView, LeaguesView, …), AppView je składa
+ui/        FormDialog (formularz z opisu pól), AuthDialog, Notifier, ActionDispatcher
+actions/   kontrolery akcji przycisków data-action: Session, League, Team, Game, OwnTeam, Notification
+```
+
+Przepływ: kliknięcie elementu z `data-action` → `ActionDispatcher` → handler kontrolera → `ApiClient` →
+`DataLoader.reload()` → `AppView.render()`. Widoki tylko rysują HTML ze stanu i niczego nie pobierają.
+
 ## Generator terminarza
 
 W panelu „Terminarz” organizator klika **Ułóż terminarz**. System układa mecze „każdy z każdym” z aktualnych drużyn ligi
